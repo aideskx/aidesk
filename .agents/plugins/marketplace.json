@@ -1,0 +1,20 @@
+{
+  "name": "aidesk",
+  "interface": {
+    "displayName": "AI书桌"
+  },
+  "plugins": [
+    {
+      "name": "aidesk-runtime",
+      "source": {
+        "source": "local",
+        "path": "./plugins/aidesk-runtime"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
