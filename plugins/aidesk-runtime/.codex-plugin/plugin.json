@@ -1,15 +1,15 @@
 {
   "name": "aidesk-runtime",
-  "version": "0.1.0",
-  "description": "AI书桌的最小 skills-only 仓库候选入口。",
+  "version": "0.1.1",
+  "description": "AI书桌的最小 V1 skills-only 仓库候选入口。",
   "author": {
     "name": "AI书桌"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "AI书桌",
-    "shortDescription": "打开 AI书桌最小入口。",
-    "longDescription": "提供尚未连接账号、学习者、MCP 或教学服务的 AI书桌 V0 仓库候选入口。",
+    "shortDescription": "打开 AI书桌 V1 最小入口。",
+    "longDescription": "提供入口说明、范围导航，以及当前可用与暂不提供边界；暂不提供账号、家庭、儿童、学习者资料、真实教学或学习事实。",
     "developerName": "AI书桌",
     "category": "Productivity",
     "capabilities": [],
