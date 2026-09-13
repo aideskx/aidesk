@@ -4,9 +4,11 @@
 
 当前发布 `aidesk-runtime` `0.3.0+codex.20260913211526`，包含同一 Plugin 的入口 Skill 和 MCP 连接声明，MCP 目标为 `https://aideskx.com/mcp`。真实宿主中的入口、认证启动和受限账号状态读取已在本机开发范围验证；教学功能、真实儿童数据和跨设备兼容不属于本次发布承诺。
 
-普通用户可以直接向 Codex 发送一句话：
+普通用户可以直接向 Codex 发送下面这句话：
 
-> 从 https://github.com/aiepgpt-glitch/aidesk-plugin 安装 AI书桌 Plugin，安装完成后新建任务并打开 AI书桌。
+> 请从 GitHub 仓库 `aiepgpt-glitch/aidesk-plugin` 安装 AI书桌插件，不要安装其他同名插件。
+
+这句话保留了唯一的 GitHub 仓库坐标，没有放入网址；即使当前对话没有项目上下文，也能把安装目标限定到本仓库。安装完成后，再新建任务并发送“打开AI书桌”。
 
 Codex 会在宿主支持的范围内使用 marketplace add 和 plugin add 等管理步骤完成安装；这句话不是对所有宿主界面或安装链路一致性的承诺。
 
