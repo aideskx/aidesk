@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "aidesk-authority": {
+      "type": "http",
+      "url": "https://aideskx.com/mcp"
+    }
+  }
+}
