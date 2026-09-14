@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.1+codex.20260914045055",
+  "latestVersion": "0.3.1+codex.20260914051749",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "f89ffb823dcacd9496a1899f5133836b0125b81fb6629dcbb0c80132ea7eeb57",
-  "publishedAt": "2026-09-14T04:59:49Z",
-  "notes": "打开AI书桌时自动检查公开稳定版；有新版时提示，检查暂不可用时继续登录。"
+  "packageDigest": "1e838bd6a087ddd96163765ec4b6f97dcff405c914006a9af04413a9b0027993",
+  "publishedAt": "2026-09-14T05:19:00Z",
+  "notes": "修正普通新对话中延迟展示的工具发现，先查询实际目录再打开AI书桌。"
 }

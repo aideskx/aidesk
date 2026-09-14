@@ -5,7 +5,26 @@ description: 通过同一 Plugin 的 MCP 打开AI书桌、检查插件更新，�
 
 # AI书桌入口
 
-用户要求“打开AI书桌”、进入或使用AI书桌时，在当前宿主工具中找到本 Plugin `aidesk-runtime` 所属 `aidesk-authority` 服务，先调用 `aidesk_check_plugin_update`，再依实际声明调用 `aidesk_account_status`、`aidesk_read_context`。一次打开只检查一次更新，普通后续回合不重复。只查询账号时只读取账号；只问产品介绍时不主动检查、登录或读数据。宿主提供工具搜索时用它发现实际工具，不猜前缀。
+用户要求“打开AI书桌”、进入或使用AI书桌时，先按下方方法发现本 Plugin `aidesk-runtime` 所属 `aidesk-authority` 工具，再调用 `aidesk_check_plugin_update`、`aidesk_account_status`、`aidesk_read_context`。一次打开只检查一次更新，普通后续回合不重复。只查询账号时只读取账号；只问产品介绍时不主动检查、登录或读数据。
+
+## 先发现工具
+
+MCP 工具可能延迟展示，不一定直接出现在顶层工具列表。判断“没有工具”前，按当前宿主确实提供的接口完成发现：
+
+- 工具已直接暴露时，按其实际声明调用。
+- 有专用工具搜索时，搜索 `aidesk` 或所需工具名并读取声明。
+- 宿主提供 `functions.exec` 且说明包含 `ALL_TOOLS` 时，在该执行环境筛选目录，例如：
+
+  ```javascript
+  text(ALL_TOOLS.filter(t => /aidesk_(check_plugin_update|account_status|read_context)/.test(t.name)));
+  ```
+
+  从结果读取所需工具的完整名称与入参，随后在 `functions.exec` 中通过实际 `tools` 方法调用。这里的 `functions.exec` 是宿主工具执行入口，不是 shell；`ALL_TOOLS` 也不是磁盘文件。不得猜测命名空间，或用 shell 查找、伪造这份目录。
+
+一个发现入口没有结果时，继续使用当前可用的另一种发现入口；只检查本 Plugin 的所需工具，不重装或修改配置。MCP resources 列表为空不等于没有 tools，不能据此停止。发现完成仍无所需工具时，说明“当前对话尚未发现调用入口”，不能据此断言插件未启用、连接失败或账号未登录；仅当宿主状态或实际调用明确给出相应原因时，才引导对应的启用、重连或登录操作。没有失败证据，不让用户反复重启、新建对话或重装。
+
+## 打开与检查更新
+
 
 更新检查无需登录、入参为空；包版本由同一 MCP 连接自动携带，不填模型名、Codex 版本或猜测版本。仅依据本次结果处理：`current` 直接继续，无需额外播报；`update_available` 简短说明可更新到返回的版本并继续本次使用；`update_required` 明确说明当前包低于已发布最低兼容版本，提示先更新后重新打开，不启动学习操作；`ahead` 说明当前包新于公开稳定版，不自动降级；`unknown` 说明当前连接无法识别包版本，提示先更新一次以启用检查；`unavailable` 或工具未就绪时说明暂未确认更新并继续既有账号流程，不说已是最新版。`unknown` 不等于版本太旧，任何更新状态都不能代替身份或权限检查。
 

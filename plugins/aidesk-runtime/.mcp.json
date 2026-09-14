@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://aideskx.com/mcp",
       "http_headers": {
-        "X-Aidesk-Plugin-Version": "0.3.1+codex.20260914045055"
+        "X-Aidesk-Plugin-Version": "0.3.1+codex.20260914051749"
       }
     }
   }
