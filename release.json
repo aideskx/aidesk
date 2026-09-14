@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260914062319",
+  "latestVersion": "0.3.2+codex.20260914075013",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "ae6322030fe44d28c4db6338f61f99a0bb9923cca3f3b99c7c6f10512620d4a6",
-  "publishedAt": "2026-09-14T06:23:19Z",
-  "notes": "自动检测并安装更新的下一构建；用于核验真实旧版到新版升级及连接生效状态。"
+  "packageDigest": "20478878bc5b9f584e50a740bfa8ef7eccabd89f1b0521af5e6acff94e1aadcd",
+  "publishedAt": "2026-09-14T07:50:13Z",
+  "notes": "同一自动更新实现的下一构建，仅更新版本标识；再次真实自动更新验收进行中，尚不代表安装或当前连接已验证。"
 }
