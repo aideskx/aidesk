@@ -6,9 +6,9 @@
 
 普通用户可以直接向 Codex 发送下面这句话：
 
-> 安装 `aideskx/aidesk`
+> 安装 Codex 插件 `aideskx/aidesk`
 
-这句话只保留唯一的 GitHub 仓库坐标，没有放入网址；安装完成后，再新建任务并发送“打开AI书桌”。
+这句话明确指定 Codex 插件，并只保留唯一的 GitHub 仓库坐标，没有放入网址；安装完成后，再新建任务并发送“打开AI书桌”。
 
 Codex 会在宿主支持的范围内使用 marketplace add 和 plugin add 等管理步骤完成安装；这句话不是对所有宿主界面或安装链路一致性的承诺。
 
