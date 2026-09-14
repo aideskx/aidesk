@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.1+codex.20260914054451",
+  "latestVersion": "0.3.2+codex.20260914061702",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "73c0955c86a86cf1bbf2dbe30e9fd456eed8e5b507d24c87be1731ea58f3110f",
-  "publishedAt": "2026-09-14T05:44:51Z",
-  "notes": "补齐入口技能的宿主 MCP 依赖声明，沿用同一 AI书桌连接，供入口工具发现复测。"
+  "packageDigest": "35252df0ed35b2138b7f207bc2afff2d7c297eeaf4c480e4aec7eb91c06e4015",
+  "publishedAt": "2026-09-14T06:21:43Z",
+  "notes": "打开AI书桌时检测并安装官方更新；安装后核验文件，区分已安装与当前连接已生效。"
 }
