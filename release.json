@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "plugin": "aidesk-runtime",
+  "repository": "aideskx/aidesk",
+  "channel": "stable",
+  "latestVersion": "0.3.1+codex.20260914045055",
+  "minimumSupportedVersion": "0.3.0",
+  "packageDigest": "f89ffb823dcacd9496a1899f5133836b0125b81fb6629dcbb0c80132ea7eeb57",
+  "publishedAt": "2026-09-14T04:59:49Z",
+  "notes": "打开AI书桌时自动检查公开稳定版；有新版时提示，检查暂不可用时继续登录。"
+}
