@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260914061702",
+  "latestVersion": "0.3.2+codex.20260914062319",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "35252df0ed35b2138b7f207bc2afff2d7c297eeaf4c480e4aec7eb91c06e4015",
-  "publishedAt": "2026-09-14T06:21:43Z",
-  "notes": "打开AI书桌时检测并安装官方更新；安装后核验文件，区分已安装与当前连接已生效。"
+  "packageDigest": "ae6322030fe44d28c4db6338f61f99a0bb9923cca3f3b99c7c6f10512620d4a6",
+  "publishedAt": "2026-09-14T06:23:19Z",
+  "notes": "自动检测并安装更新的下一构建；用于核验真实旧版到新版升级及连接生效状态。"
 }
