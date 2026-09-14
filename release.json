@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260914075013",
+  "latestVersion": "0.3.2+codex.20260914080525",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "20478878bc5b9f584e50a740bfa8ef7eccabd89f1b0521af5e6acff94e1aadcd",
-  "publishedAt": "2026-09-14T07:50:13Z",
-  "notes": "本机从上一构建自动更新成功，包摘要核验通过；安装任务旧连接未热刷新，新任务已加载本构建并由 MCP 确认为 current。本轮未重启，未覆盖手动新建任务、双机自动更新、教学或新登录。"
+  "packageDigest": "e1d1dfa2b193e95a9f83f7f67b977c1f297658a2621505b3b807abfa69913104",
+  "publishedAt": "2026-09-14T08:05:25Z",
+  "notes": "仅更新版本标识的下一构建，算法与 Skill 保持不变，发布供用户自行手动验收；本构建的安装和连接激活尚未测试。此前构建的受测结果保留在 README。"
 }
