@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.1+codex.20260914053337",
+  "latestVersion": "0.3.1+codex.20260914054451",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "9d55a8d0c1b5792ea007d73b0e3986176298321c8cc4fbe8dabfd5c03eeb992b",
-  "publishedAt": "2026-09-14T05:33:37Z",
-  "notes": "自动检查更新验收构建；功能沿用上一版本，用于验证发现新版与用户确认更新流程。"
+  "packageDigest": "73c0955c86a86cf1bbf2dbe30e9fd456eed8e5b507d24c87be1731ea58f3110f",
+  "publishedAt": "2026-09-14T05:44:51Z",
+  "notes": "补齐入口技能的宿主 MCP 依赖声明，沿用同一 AI书桌连接，供入口工具发现复测。"
 }

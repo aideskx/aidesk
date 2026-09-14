@@ -1,0 +1,11 @@
+interface:
+  display_name: "AI书桌"
+  short_description: "打开AI书桌，检查插件更新并查询当前账号、家庭和学习者状态。"
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "aidesk-authority"
+      description: "AI书桌插件的版本检查、账号与家庭学习者服务"
+      transport: "streamable_http"
+      url: "https://aideskx.com/mcp"
