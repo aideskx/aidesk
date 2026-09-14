@@ -7,5 +7,5 @@
   "minimumSupportedVersion": "0.3.0",
   "packageDigest": "20478878bc5b9f584e50a740bfa8ef7eccabd89f1b0521af5e6acff94e1aadcd",
   "publishedAt": "2026-09-14T07:50:13Z",
-  "notes": "同一自动更新实现的下一构建，仅更新版本标识；再次真实自动更新验收进行中，尚不代表安装或当前连接已验证。"
+  "notes": "本机从上一构建自动更新成功，包摘要核验通过；安装任务旧连接未热刷新，新任务已加载本构建并由 MCP 确认为 current。本轮未重启，未覆盖手动新建任务、双机自动更新、教学或新登录。"
 }
