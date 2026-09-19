@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260914080525",
+  "latestVersion": "0.3.2+codex.20260918142532",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "e1d1dfa2b193e95a9f83f7f67b977c1f297658a2621505b3b807abfa69913104",
-  "publishedAt": "2026-09-14T08:05:25Z",
-  "notes": "仅更新版本标识的下一构建，算法与 Skill 保持不变，发布供用户自行手动验收；本构建的安装和连接激活尚未测试。此前构建的受测结果保留在 README。"
+  "packageDigest": "2caf2b973446d83e17f7c1200cc75e1add23bae0260aa2abf52355c9c7fbc9c5",
+  "publishedAt": "2026-09-19T08:12:20Z",
+  "notes": "教学技术预发布：增加服务器完整教学Skill加载、学习事实保存与接续支持。包内更新程序沿用原实现；兼容教学Skill后续独立在服务器维护。本机／开发环境合成代表验证通过，公开更新后的同候选路径、MacBook／Windows及真实家庭尚未验收。"
 }
