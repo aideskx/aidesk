@@ -773,10 +773,11 @@ function accepted(dir, s, entry, receipt) {
 
 export async function processTeachingPluginEvent(event, { dataRoot = process.env.PLUGIN_DATA, now = Date.now() } = {}) {
   const name = toolName(event), action = actionOf(name), e = event.hook_event_name;
-  const known = ['aidesk_account_status', 'aidesk_check_selection'].includes(name);
+  const accountReceipt = ['aidesk_account_status', 'aidesk_entry_context'].includes(name);
+  const known = accountReceipt || name === 'aidesk_check_selection';
   if (!action && !known && !['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'].includes(e)) return {};
   const existing = dataRoot && existsSync(join(dataRoot, 'teaching-plugin-v1'));
-  if (!existing && !(e === 'PostToolUse' && name === 'aidesk_account_status')) return action && e === 'PreToolUse' ? denial('CURRENT_ACCOUNT_REQUIRED') : {};
+  if (!existing && !(e === 'PostToolUse' && accountReceipt)) return action && e === 'PreToolUse' ? denial('CURRENT_ACCOUNT_REQUIRED') : {};
   try {
     need(bounded(event.session_id, 256), 'HOST_SESSION_REQUIRED');
     if (e !== 'SessionEnd') need(bounded(event.turn_id, 256), 'HOST_TURN_REQUIRED');
@@ -784,7 +785,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
     return await locked(dir, () => {
       const path = join(dir, 'sessions', `${sha(event.session_id)}.json`);
       let s = read(path, null);
-      if (!s) { if (e !== 'PostToolUse' || name !== 'aidesk_account_status') return action && e === 'PreToolUse' ? denial('CURRENT_ACCOUNT_REQUIRED') : {}; s = emptySession(event.session_id); }
+      if (!s) { if (e !== 'PostToolUse' || !accountReceipt) return action && e === 'PreToolUse' ? denial('CURRENT_ACCOUNT_REQUIRED') : {}; s = emptySession(event.session_id); }
       need(s.format === 1 && s.hostSessionId === event.session_id, 'SESSION_CORRUPT');
       const save = () => durable(path, s);
       let preparing = null;
@@ -842,8 +843,23 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           // returns before the normal persistence point.
           save();
         }
-        if (name === 'aidesk_account_status' && e === 'PostToolUse') {
-          const r = result(event); need(!r.error && r.data.account?.authenticated === true && r.data.account?.status === 'active'
+        if (accountReceipt && e === 'PostToolUse') {
+          const r = result(event);
+          need(!r.error, 'ACCOUNT_UNVERIFIED');
+          if (name === 'aidesk_entry_context') {
+            // Only the original account evidence is adopted. The context is
+            // required as part of the complete aggregate, never as a learner
+            // selection or a replacement for domain/selection authorization.
+            const context = r.data.context;
+            need(exact(event.tool_input, []) && exact(r.data, ['account', 'checkedAt', 'context'])
+              && object(context) && ['active', 'not_provisioned'].includes(context.accountStatus)
+              && context.selectionRequired === true && object(context.accountAccess)
+              && ['allowed', 'not_entitled', 'expired', 'suspended', 'conflict'].includes(context.accountAccess.status)
+              && (context.accountAccess.expiresAt === null || Number.isFinite(Date.parse(context.accountAccess.expiresAt)))
+              && Array.isArray(context.families), 'ENTRY_CONTEXT_UNVERIFIED');
+            need(!s.account || Date.parse(r.data.checkedAt) >= Date.parse(s.account.checkedAt), 'ENTRY_ACCOUNT_STALE');
+          }
+          need(!r.error && r.data.account?.authenticated === true && r.data.account?.status === 'active'
             && bounded(r.data.account.subject, 256) && fresh(r.data.checkedAt, now, PLUGIN_LIMITS.accountFreshMs), 'ACCOUNT_UNVERIFIED');
           if (s.account && s.account.subject !== r.data.account.subject) {
             failCapacityPhase(s, 'CAPACITY_CONTEXT_CHANGED', now);
@@ -1291,7 +1307,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           if (s.correctionCapability) s.correctionCapability.ready = false;
           s.controlSession = null; s.controlRoundId = randomUUID();
         }
-        if (e === 'PostToolUse' && ['aidesk_account_status', 'aidesk_check_selection'].includes(name)) { s.active = false; s.paused = 'UNVERIFIED_SELECTION'; }
+        if (e === 'PostToolUse' && known) { s.active = false; s.paused = 'UNVERIFIED_SELECTION'; }
         if (['UserPromptSubmit', 'Stop'].includes(e)) {
           s.discardedTurns = [...new Set([...s.discardedTurns, event.turn_id])].slice(-64);
           s.initialAssistantTurn = null; s.assistantTurns = [];

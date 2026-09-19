@@ -4,6 +4,10 @@
 
 纠错依据扩展由客户端自动协商；实际session须声明 `correctionBasisContract="aidesk-teaching-correction-basis-v1"` 才能使用 `skillRuleRefs`、`conditionRefs` 或证据 `filter.basis`。缺失时按服务器Skill说明限制相应操作，不删字段重发未知保存。严格旧服务可能直接拒绝新握手，此时教学未接通，需恢复匹配的服务与核心；不绕过登录、签名或完整加载。
 
+## 教学能力与回执边界
+
+教学能力以当前同一MCP实际公开工具及返回为准；通过`aidesk_teaching_session`接通后，服务器完整Skill可调用教学事务保存有依据的事实。无工具或未获保存回执时准确说明限制，开发合成验证不能称为真实家庭已验。账号权益后端受控写入、支付或套餐运营不在当前MCP用户路径内，不代表历史S7整阶段完成。工具不可用即未完成；Skill加载、页面打开、认证回跳或本地代码存在都不能替代真实操作成功。
+
 ## 进入与完整加载
 
 1. 发现同一 MCP 的 `aidesk_teaching_session`，调用并核实际结果。首次 `challenge` 后再调用一次同工具取得 `ready`；这是客户端观察接线，不是学习事实保存。已有未知操作时先按返回的原号使用 `operation/recover_request`，或用 `discover` 查询服务，不能为恢复先新写 `start.prepare`。本机候选列表不等于服务回执。若仍未决，仅在session声明`explicitOperationCancellation=true`且本人明确取消尚未完成的保存时，调用同前缀`cancel_operation({operationId,quote})`，quote为本轮完整真实原话。普通结束、继续或查不到均不授权取消。客户端封装原件；服务器保留已完成事实，只能持久否决尚未提交的原号。核该终态后再接续；取消保存不等于end成功，不声称解除绑定。
