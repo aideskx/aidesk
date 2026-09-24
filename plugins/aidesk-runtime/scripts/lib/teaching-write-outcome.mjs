@@ -1,8 +1,9 @@
-// Generated from services/authority-api/src/teaching-write-outcome.ts; source SHA-256 af603932914798540b498634c86af05632c756391faf1251e646c0af91cd603e.
+// Generated from services/authority-api/src/teaching-write-outcome.ts; source SHA-256 be3357e58cb106abae5eaa7868ebe39499beaf54e4892dde39f22e37b1509ea9.
 // Run node tooling/build-plugin-runtime.mjs; do not edit this copy.
+import { GOAL_BUSINESS_CONTRACT, goalTextResultFromPublic } from "./teaching-goal-contract.mjs";
 import { isTimestamp, isUuid } from "./domain-inputs.mjs";
 import { canonicalTeachingJson, teachingObject, teachingRequestSha256, teachingSameUuid, TEACHING_CORRECTION_BASIS_CONTRACT } from "./teaching-business-contract.mjs";
-import { unpackTeachingPluginRequest } from "./teaching-plugin-transport.mjs";
+import { unpackTeachingPluginRequest, unpackGoalPluginRequest } from "./teaching-plugin-transport.mjs";
 /** Terminal rejection is backed by the original owner durable denial fence.
  * It is never a completed 03 receipt or a learning fact. */
 export const TEACHING_WRITE_OUTCOME_CONTRACT = "aidesk-teaching-write-outcome-v1";
@@ -53,19 +54,25 @@ export function correlateTeachingWriteAttempt(tool, args, authenticatedSubject) 
         delete argsOnly._aidesk;
         if (wire.argumentsSha256 !== teachingRequestSha256(argsOnly))
             return null;
-        const request = unpackTeachingPluginRequest(action, wire.payload.businessRequest, argsOnly);
+        const goal = argsOnly.contract === GOAL_BUSINESS_CONTRACT;
+        const request = goal ? unpackGoalPluginRequest(action, wire.payload.businessRequest, argsOnly)
+            : unpackTeachingPluginRequest(action, wire.payload.businessRequest, argsOnly);
         if (action === "start") {
             const r = request;
-            if (!exact(argsOnly, ["taskAction"]) || !same(r.taskAction, argsOnly.taskAction)
+            if (!exact(argsOnly, goal ? ["contract", "taskAction"] : ["taskAction"]) || !same(r.taskAction, argsOnly.taskAction)
                 || !teachingSameUuid(r.clientContextId, wire.context.clientContextId)
                 || !same(r.selected, { familyId: wire.context.familyId, learnerId: wire.context.learnerId, selectionAttemptId: wire.context.selectionAttemptId }))
                 return null;
         }
         else if (action === "commit") {
             const r = request, payload = { ...argsOnly };
+            if (goal)
+                delete payload.contract;
             delete payload.dependencies;
             delete payload.taskRef;
             delete payload.expectedSequence;
+            if (goal && r.action === "checkpoint" && Object.hasOwn(payload, "textResult"))
+                payload.textResult = goalTextResultFromPublic(payload.textResult);
             if (tool !== `aidesk_teaching_${r.action}` || !same(r.payload, payload) || !same(r.expected.dependencies, argsOnly.dependencies)
                 || Object.hasOwn(argsOnly, "taskRef") && !same(argsOnly.taskRef, r.taskRef)
                 || Object.hasOwn(argsOnly, "expectedSequence") && argsOnly.expectedSequence !== r.expected.learnerSequence)
@@ -73,7 +80,7 @@ export function correlateTeachingWriteAttempt(tool, args, authenticatedSubject) 
         }
         else {
             const r = request;
-            if (!exact(argsOnly, []) || r.action !== "end" || r.target !== null || r.expectedEpoch !== r.binding.epoch)
+            if (!exact(argsOnly, goal ? ["contract"] : []) || r.action !== "end" || r.target !== null || r.expectedEpoch !== r.binding.epoch)
                 return null;
         }
         return { operationId: request.operationId, rpcAction: action, requestSha256: teachingRequestSha256(request), callId: wire.callId,

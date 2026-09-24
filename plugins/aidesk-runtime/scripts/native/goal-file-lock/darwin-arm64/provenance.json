@@ -1,0 +1,152 @@
+{
+  "contract": "aidesk-goal-file-lock-provenance-v1",
+  "artifact": {
+    "contract": "aidesk-goal-file-lock-artifact-v1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "napiVersion": 8,
+    "nodeMinimum": 20,
+    "file": "goal-file-lock.node",
+    "sha256": "8aeb3d7a708d32b1533a56424494a8fb0139837acce039e6f07578169d9192c4",
+    "sourceSha256": "2d9f93ce774af7fc99413fae514f35e6a38ada4b4424c1002fd9349674c3d3b1"
+  },
+  "source": "../../../goal-file-lock.c",
+  "builder": "tooling/build-goal-file-lock.mjs",
+  "builtAt": "2026-09-21T08:37:48.181Z",
+  "build": {
+    "node": "v20.20.2",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "headers": [
+      {
+        "file": "node_api.h",
+        "sha256": "cf2446da4783a707dc9399321cff3ea28dce86fafdf38746fc47f1b293f5a040"
+      },
+      {
+        "file": "node_api_types.h",
+        "sha256": "8d5d854088d5725fec9775510e0aeeeb790a41ad083c49bb721d950b86e6bd61"
+      },
+      {
+        "file": "js_native_api.h",
+        "sha256": "89393f07881fcba3ed097a5989fba1746f1c2cf611f19ba4dcb17071da8a661e"
+      },
+      {
+        "file": "js_native_api_types.h",
+        "sha256": "0410c31e227f81e2981363c4d543f4832ac3df785343ec64cee621742ff8a034"
+      },
+      {
+        "file": "node_version.h",
+        "sha256": "469f42311cb60ecdfde9f44f56892a3b23e5564297692f61004dbc2433b1a00b"
+      }
+    ],
+    "rawProvenanceSha256": "5a5170af04634894fcdba2dee6ccca8c31f048c04d9e988317bec208a9adba4e",
+    "target": "arm64-apple-darwin25.5.0",
+    "minimumMacOS": "11.0"
+  },
+  "verification": [
+    {
+      "node": "20.20.2",
+      "passed": 12,
+      "failed": 0,
+      "tapSha256": "e8926e13bb3dc6045c13c5b194de1a27c1f9d48b70ea2943bd571e2273263c8e"
+    },
+    {
+      "node": "24.20.0",
+      "passed": 12,
+      "failed": 0,
+      "tapSha256": "19bca0eafc12ae7db8c762007ed2f49b8668fe5b549b6d0f6be88f8ca24ea5af"
+    }
+  ],
+  "priorSameBinaryEvidence": {
+    "contract": "aidesk-goal-file-lock-provenance-v1",
+    "artifact": {
+      "contract": "aidesk-goal-file-lock-artifact-v1",
+      "platform": "darwin",
+      "arch": "arm64",
+      "napiVersion": 8,
+      "nodeMinimum": 20,
+      "file": "goal-file-lock.node",
+      "sha256": "8aeb3d7a708d32b1533a56424494a8fb0139837acce039e6f07578169d9192c4",
+      "sourceSha256": "755d379d4e3502c163593e67c437336ddf5b84dab1d7bba944c7a23ddd59da7b"
+    },
+    "source": "../../../goal-file-lock.c",
+    "builder": "tooling/build-goal-file-lock.mjs",
+    "builtAt": "2026-09-21T07:07:43.046Z",
+    "build": {
+      "node": "v24.20.0",
+      "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+      "target": "arm64-apple-darwin",
+      "minimumMacOS": "11.0",
+      "capturedSourceBeforeCompile": true,
+      "headers": [
+        {
+          "file": "node_api.h",
+          "sha256": "2d4560831e525b47b060ec8a0864ab73993df9e20215ce9f0fe7b24cd31af32a"
+        },
+        {
+          "file": "node_api_types.h",
+          "sha256": "a25356630d3058f0a0c8937d9f297e9471e037fda58c2696d8a505c2bd99cb00"
+        },
+        {
+          "file": "js_native_api.h",
+          "sha256": "8808ef8899a1691411928ef5dd7dae0537aedc93d3a34e223b2d89692e79c788"
+        },
+        {
+          "file": "js_native_api_types.h",
+          "sha256": "4f19cb90d240765cc0961d92a1ee20f65fdc50db7de1ab0a5cb6bc227224e1a0"
+        },
+        {
+          "file": "node_version.h",
+          "sha256": "60ebf5f2ed30034c897df39ac163918b7b84e4f82a68355af7b6466922768ee1"
+        }
+      ]
+    },
+    "verification": [
+      {
+        "runtime": "Node 24.20.0 darwin-arm64",
+        "test": "tooling/goal-file-lock.node.mjs",
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 2772.078459,
+        "testSourceSha256": "7adebc13e7d5227771537d405d5ff8603ddd80997997497d7b945e6f697fff13"
+      },
+      {
+        "runtime": "Node 20.20.2 darwin-arm64",
+        "test": "tooling/goal-file-lock.node.mjs",
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 1792.115,
+        "runtimeSource": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-arm64.tar.gz",
+        "runtimeArchiveSha256": "466e05f3477c20dfb723054dfebffe55bc74660ee77f612166fca121dacb65b6",
+        "testSourceSha256": "7adebc13e7d5227771537d405d5ff8603ddd80997997497d7b945e6f697fff13"
+      }
+    ],
+    "limits": [
+      "Only the darwin-arm64 binary is packaged in this local candidate.",
+      "Windows and Mac x64 builds and runtime behavior are not verified.",
+      "Ordinary Codex Plugin load and power-loss durability are not verified by these process tests."
+    ],
+    "packagedLoadVerification": {
+      "testSourceSha256": "45b9ed512c6a0b23bbb3a4dd554b38192ca2e66b76a23d9235e663e18983bbe4",
+      "pattern": "native loader verifies",
+      "scope": "Default same-package load and lock callback, plus explicit absent/mismatched artifact rejection.",
+      "runs": [
+        {
+          "runtime": "Node 24.20.0 darwin-arm64",
+          "passed": 1,
+          "failed": 0
+        },
+        {
+          "runtime": "Node 20.20.2 darwin-arm64",
+          "passed": 1,
+          "failed": 0,
+          "excludedByPattern": 11
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Source rebuilt on Mac arm64 to the identical previously tested binary. Ordinary Codex Plugin host use and power-loss recovery remain unverified."
+  ]
+}

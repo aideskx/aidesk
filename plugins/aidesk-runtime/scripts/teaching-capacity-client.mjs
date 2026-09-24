@@ -300,8 +300,10 @@ export function acceptCapacityResult(s, action, input, value, now, storage) {
     need(value.pageIndex <= c.received.length, 'CAPACITY_PAGE_ORDER');
     const old = c.received[value.pageIndex];
     if (old) {
-      const { checkedAt: _oldTime, ...previous } = storage.read(c.loadId, value.pageIndex);
-      const { checkedAt: _newTime, ...current } = value;
+      const previous = { ...storage.read(c.loadId, value.pageIndex) };
+      const current = { ...value };
+      delete previous.checkedAt;
+      delete current.checkedAt;
       need(old.sha256 === value.sha256 && same(previous, current), 'CAPACITY_PAGE_CONFLICT');
     }
     else { storage.write(c.loadId, value.pageIndex, value); c.received.push({ pageIndex: value.pageIndex, sha256: value.sha256 }); }

@@ -1,0 +1,10 @@
+{
+  "contract": "aidesk-goal-file-lock-artifact-v1",
+  "platform": "win32",
+  "arch": "x64",
+  "napiVersion": 8,
+  "nodeMinimum": 20,
+  "file": "goal-file-lock.node",
+  "sha256": "2a29cbc8d3fdd58af77ae1d9a782aa344af1d8562e9229efe9d594e414aa933d",
+  "sourceSha256": "2d9f93ce774af7fc99413fae514f35e6a38ada4b4424c1002fd9349674c3d3b1"
+}
