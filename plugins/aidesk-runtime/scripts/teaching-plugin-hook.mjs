@@ -13,7 +13,11 @@ import { canonicalTeachingJson, parseTeachingBusinessInput, teachingRequestSha25
   teachingSha256, teachingUtf8Bytes, validTeachingBusinessResult, TeachingInputError, TEACHING_BUSINESS_CONTRACT,
   TEACHING_CORRECTION_BASIS_CONTRACT, usesTeachingCorrectionBasis } from './lib/teaching-business-contract.mjs';
 import { validContentToolInput, validContentResult } from './lib/teaching-content-contract.mjs';
-import { packTeachingPluginRequest, unpackTeachingPluginRequest } from './lib/teaching-plugin-transport.mjs';
+import { packTeachingPluginRequest, unpackTeachingPluginRequest,
+  packGoalPluginRequest, unpackGoalPluginRequest } from './lib/teaching-plugin-transport.mjs';
+import { GOAL_BUSINESS_CONTRACT, goalTextResultFromPublic, parseGoalBusinessInput, validGoalBusinessResult } from './lib/teaching-goal-contract.mjs';
+import { validGoalAccess } from './lib/goal-access.mjs';
+import { validatePluginPackage } from './lib/package-integrity.mjs';
 import { TEACHING_WRITE_OUTCOME_CONTRACT, correlateTeachingCall, validTeachingWriteRejected, validTeachingDenialProof } from './lib/teaching-write-outcome.mjs';
 import { CAPACITY_PROFILE, validTeachingSkillCapacityInput, validTeachingSkillCapacityResult } from './lib/teaching-skill-capacity-contract.mjs';
 import { CapacityClientError, capacityActions, capacityInput, acceptCapacityResult, reserveCapacityCall,
@@ -24,10 +28,13 @@ export const PLUGIN_PROTOCOL = 'aidesk-teaching-plugin-v1';
 export const PLUGIN_LIMITS = Object.freeze({ inputBytes: 131072, fileBytes: 1048576, sources: 64, calls: 256,
   operations: 128, localOperations: 16, accountFreshMs: 300000, sourceBytes: 4096, pendingObservationMs: 120000, cancellationIntentMs: 120000, writeDispatchWindowMs: 30000 });
 const commitActions = new Set(['select_mode', 'adopt_mode', 'goal', 'checkpoint', 'correction', 'advance_corrections']);
+const goalActions = new Set(['start', 'goal', 'checkpoint', 'context', 'operation', 'recover_request', 'end']);
 const actions = new Set(['session', 'sources', 'text_digest', 'ids', 'load_skill', 'read_content_catalog', 'read_content',
   ...capacityActions, 'start', ...commitActions, 'cancel_operation', 'context', 'evidence', 'operation', 'recover_request', 'discover', 'end']);
 const resumablePauses = new Set(['INTERRUPT', 'SESSIONEND', 'VERIFICATION_EXPIRED']);
 const readOnlyRecovery = new Set(['session', 'operation', 'discover', 'recover_request']);
+const expiredSubscriptionRecovery = new Set(['session', 'operation', 'recover_request']);
+const goalPreparationSelected = s => s.selection?.contract === GOAL_BUSINESS_CONTRACT;
 const knownRejections = new Set(['invalid_input', 'payload_too_large', 'contract_incompatible', 'authenticated_required',
   'scope_denied', 'entry_denied', 'feature_unavailable', 'binding_stale', 'version_conflict', 'operation_conflict',
   'source_missing', 'source_mismatch', 'dependency_invalid', 'content_invalid', 'content_missing', 'content_incompatible', 'content_retired']);
@@ -48,11 +55,27 @@ const capacityEntryIsActive = s => !s.ended && (s.capacityPhase?.status === 'loa
 const businessInputCodes = Object.freeze({ invalid_input: 'BUSINESS_INPUT_INVALID',
   payload_too_large: 'BUSINESS_PAYLOAD_TOO_LARGE', contract_incompatible: 'BUSINESS_CONTRACT_INCOMPATIBLE' });
 function parseCurrentBusinessInput(action, value) {
-  try { return parseTeachingBusinessInput(action, value); }
+  try { return parseOriginalBusinessInput(action, value); }
   catch (error) {
     if (error instanceof TeachingInputError && Object.hasOwn(businessInputCodes, error.kind)) throw new SeamError(businessInputCodes[error.kind]);
     throw error;
   }
+}
+// Originals choose their own parser. A v2 parse failure never enters v1.
+const goalContract = value => value?.contract === GOAL_BUSINESS_CONTRACT;
+const parseOriginalBusinessInput = (action, value) => goalContract(value)
+  ? parseGoalBusinessInput(action, value) : parseTeachingBusinessInput(action, value);
+const validOriginalBusinessResult = (action, result, input) => goalContract(input)
+  ? validGoalBusinessResult(action, result, input) : validTeachingBusinessResult(action, result, input);
+const unpackBusinessRequest = (action, wire, args) => goalContract(args)
+  ? unpackGoalPluginRequest(action, wire, args) : unpackTeachingPluginRequest(action, wire, args);
+function ownPackageRef() {
+  const verified = validatePluginPackage(resolve(fileURLToPath(new URL('..', import.meta.url))));
+  const skillPath = 'skills/aidesk-entry/SKILL.md';
+  const skill = verified.files.find(file => file.path === skillPath);
+  need(skill, 'PACKAGE_SKILL_UNAVAILABLE');
+  return { pluginName: 'aidesk-runtime', pluginVersion: verified.version, packageDigest: verified.packageDigest,
+    skillPath, skillSha256: skill.sha256 };
 }
 const inputAdvice = code => Object.values(businessInputCodes).includes(code)
   ? '本次调用在本机合同校验时被拒绝，尚未派发，未留下新的可对账写入原号；不要查询不存在的原号。请按实际工具schema核对字段、类型及大小后修正参数；合同版本不兼容需先恢复兼容客户端，不可绕过校验。'
@@ -69,10 +92,14 @@ const refreshAdvice = code => code === 'CURRENT_VERIFICATION_REFRESH_REQUIRED'
     ? '本次写入尚未派发，未生成原操作号；请先用session刷新客户端challenge并核实际结果，再继续原已授权事项。'
     : code === 'CHALLENGE_REFRESH_RECHECK_REQUIRED'
       ? '当前challenge刷新后仍只剩很短有效期；不要循环hello，请先沿原入口重核账号和原明确选择。未派发写入没有原操作号，已派发未知仍只按原号对账。'
-      : code === 'LOCAL_OUTBOX_LIMIT'
-        ? '本次写入尚未派发，未生成原操作号；本地活跃写入队列已满。保留现有原号并核对未决结果，不循环重试、不删除历史。'
-        : code === 'CORRECTION_BASIS_UNAVAILABLE'
-          ? '本次扩展调用尚未派发，未保存新的原请求；请先调用session核对纠错依据能力。未取得当前服务明确能力回执时，不发送扩展字段，不删去必要依据改写请求冒充成功。' : inputAdvice(code);
+      : code === 'CURRENT_USER_REQUEST_REQUIRED'
+        ? '本次正式业务尚未派发。当前资料下没有可用的真实用户请求；可以继续准备、读取和原号对账。请等待用户提出实际要处理的问题，不能用助手文字、旧资料消息或空回复补造来源。'
+        : code === 'CURRENT_REQUEST_ADMISSION_REQUIRED' || code === 'REQUEST_ADMISSION_EXPIRED'
+          ? '本次业务尚未派发。请对当前真实请求和这个任务取得正式new/resume回执后再继续；旧请求或已到期的准入不能续用。若原操作结果未知，先按原号对账，不换号重写。'
+          : code === 'LOCAL_OUTBOX_LIMIT'
+            ? '本次写入尚未派发，未生成原操作号；本地活跃写入队列已满。保留现有原号并核对未决结果，不循环重试、不删除历史。'
+            : code === 'CORRECTION_BASIS_UNAVAILABLE'
+              ? '本次扩展调用尚未派发，未保存新的原请求；请先调用session核对纠错依据能力。未取得当前服务明确能力回执时，不发送扩展字段，不删去必要依据改写请求冒充成功。' : inputAdvice(code);
 const denial = code => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
   permissionDecisionReason: refreshAdvice(code) ? `AI书桌教学接线未完成（${code}）。${refreshAdvice(code)}`
     : `AI书桌教学接线未完成（${code}）。不可声称已保存，不换原号重写；先用session/operation核对。账号功能仍按原权限。` } });
@@ -188,31 +215,155 @@ function capacityResponseBytes(event) {
   return bytes;
 }
 function emptySession(id) {
-  return { format: 1, hostSessionId: id, account: null, selection: null, pendingSelection: null,
+  return { format: 1, hostSessionId: id, account: null, selection: null, pendingSelection: null, subscriptionRecovery: null,
     context: null, challenge: null, hello: null, correctionCapability: null, active: false, ended: false, endedBinding: null, paused: null, pauseRecovery: null,
     binding: null, executionId: null, taskRef: null, sequence: 0, pendingTransition: null, contentRunId: randomUUID(), loaded: null,
     sources: [], submittedSourceIds: [], discardedTurns: [], assistantTurns: [], initialAssistantTurn: null, hasSelectedContext: false,
-    pendingObservation: null, observationRecovery: [], callCount: 0 };
+    pendingObservation: null, observationRecovery: [], goalRequest: null, goalAdmissions: [],
+    firstEntry: null, firstEntrySeen: null, firstSelectionCandidate: null, callCount: 0 };
+}
+function clearFirstEntry(s) { s.firstEntry = null; s.firstSelectionCandidate = null; }
+function beforeFirstSelection(s) {
+  return s.hasSelectedContext !== true && !s.context && !s.selection && !s.pendingSelection && !s.binding
+    && !s.executionId && !s.pendingTransition && !s.ended;
+}
+function currentFirstEntry(s, now) {
+  const window = s.firstEntry;
+  return beforeFirstSelection(s) && exact(window, ['subject', 'entryCallId', 'checkedAt', 'openedAt', 'expiresAt'])
+    && window.subject === s.account?.subject && bounded(window.entryCallId, 512)
+    && fresh(window.checkedAt, now, PLUGIN_LIMITS.accountFreshMs) && fresh(window.openedAt, now, PLUGIN_LIMITS.accountFreshMs)
+    && expiry(window.expiresAt, now) && Date.parse(window.expiresAt) <= Date.parse(window.checkedAt) + PLUGIN_LIMITS.accountFreshMs;
+}
+function armFirstEntry(s, event, data, now) {
+  const previous = s.firstEntrySeen;
+  // Record denied as well as allowed entry receipts. A delayed allowed reply
+  // at the same timestamp cannot reopen after a newer revocation.
+  if (bounded(event.tool_use_id, 512) && (!previous || Date.parse(data.checkedAt) > Date.parse(previous.checkedAt)))
+    s.firstEntrySeen = { entryCallId: event.tool_use_id, checkedAt: data.checkedAt };
+  const c = data.context;
+  const permitted = beforeFirstSelection(s) && c.accountStatus === 'active' && validGoalAccess(c.goalAccess)
+    && fresh(c.goalAccess.checkedAt, now, PLUGIN_LIMITS.accountFreshMs)
+    && c.goalAccess.state !== 'blocked' && !['suspended', 'conflict'].includes(c.accountAccess.status)
+    && c.subscription?.state !== 'suspended' && c.families.some(f => object(f) && Array.isArray(f.learners)
+      && f.learners.some(l => object(l) && c.goalAccess.eligibleLearnerIds.includes(l.learnerId)
+        && !['suspended', 'conflict', 'out_of_scope'].includes(l.access)));
+  // A denied refresh must invalidate the window even when its timestamp is
+  // identical to the last receipt. The watermark prevents reopening, not revocation.
+  if (!permitted) { clearFirstEntry(s); return; }
+  // The watermark survives cancellation and consumption. Reading an identical
+  // or older entry receipt cannot reopen a discarded observation window.
+  if (!bounded(event.tool_use_id, 512) || previous && (previous.entryCallId === event.tool_use_id
+    || !Number.isFinite(Date.parse(previous.checkedAt)) || Date.parse(data.checkedAt) <= Date.parse(previous.checkedAt))) return;
+  if (currentFirstEntry(s, now)) return; // Refreshes do not extend the waiting window or its candidate.
+  clearFirstEntry(s);
+  s.firstEntry = { subject: s.account.subject, entryCallId: event.tool_use_id, checkedAt: data.checkedAt,
+    openedAt: new Date(now).toISOString(), expiresAt: new Date(Date.parse(data.checkedAt) + PLUGIN_LIMITS.accountFreshMs).toISOString() };
+}
+function validFirstCandidate(s, now) {
+  const p = s.firstSelectionCandidate, a = p?.selectionAttempt;
+  return currentFirstEntry(s, now) && exact(p, ['sourceId', 'generation', 'turnId', 'subject', 'text', 'sha256', 'observedAt', 'expiresAt', 'selectionAttempt'])
+    && uuid(p.sourceId) && uuid(p.generation) && bounded(p.turnId, 256) && p.subject === s.account.subject
+    && typeof p.text === 'string' && p.text.isWellFormed() && p.text.trim().length > 0 && teachingUtf8Bytes(p.text) <= PLUGIN_LIMITS.sourceBytes
+    && p.sha256 === teachingSha256(p.text) && fresh(p.observedAt, now, PLUGIN_LIMITS.pendingObservationMs)
+    && expiry(p.expiresAt, now) && Date.parse(p.expiresAt) <= Math.min(Date.parse(p.observedAt) + PLUGIN_LIMITS.pendingObservationMs, Date.parse(s.firstEntry.expiresAt))
+    && (a === null || exact(a, ['toolUseId', 'attemptId', 'familyId', 'learnerId', 'generation']) && bounded(a.toolUseId, 512)
+      && uuid(a.attemptId) && bounded(a.familyId, 256) && bounded(a.learnerId, 256) && a.generation === p.generation);
+}
+function captureFirstCandidate(s, event, now) {
+  const text = event.prompt;
+  need(event.stop_hook_active !== true && currentFirstEntry(s, now) && uuid(s.goalRequest?.generation)
+    && typeof text === 'string' && text.isWellFormed() && text.trim().length > 0 && teachingUtf8Bytes(text) <= PLUGIN_LIMITS.sourceBytes, 'SOURCE_TEXT_UNAVAILABLE');
+  canonicalTeachingJson(text);
+  // Not a TeachingSource yet: no learner/context is claimed at observation.
+  s.firstSelectionCandidate = { sourceId: randomUUID(), generation: s.goalRequest.generation, turnId: event.turn_id,
+    subject: s.account.subject, text, sha256: teachingSha256(text), observedAt: new Date(now).toISOString(),
+    expiresAt: new Date(Math.min(now + PLUGIN_LIMITS.pendingObservationMs, Date.parse(s.firstEntry.expiresAt))).toISOString(), selectionAttempt: null };
+}
+function freezeFirstSelection(s, event, now) {
+  const p = s.firstSelectionCandidate, a = event.tool_input;
+  if (!validFirstCandidate(s, now) || p.selectionAttempt !== null || p.turnId !== event.turn_id
+    || p.generation !== s.goalRequest?.generation || !bounded(event.tool_use_id, 512)
+    || !exact(a, ['contract', 'familyId', 'learnerId', 'attemptId']) || a.contract !== GOAL_BUSINESS_CONTRACT
+    || !uuid(a.attemptId) || !bounded(a.familyId, 256) || !bounded(a.learnerId, 256)) { clearFirstEntry(s); return; }
+  p.selectionAttempt = { toolUseId: event.tool_use_id, attemptId: a.attemptId, familyId: a.familyId,
+    learnerId: a.learnerId, generation: p.generation };
+}
+function firstSelectionResult(s, event, selected, now) {
+  const p = s.firstSelectionCandidate, a = p?.selectionAttempt;
+  const matched = validFirstCandidate(s, now) && a !== null && p.turnId === event.turn_id && p.generation === s.goalRequest?.generation
+    && selected.contract === GOAL_BUSINESS_CONTRACT && p.subject === selected.subject && a.toolUseId === event.tool_use_id
+    && a.attemptId === selected.selectionAttemptId && a.familyId === selected.familyId && a.learnerId === selected.learnerId;
+  const result = matched ? structuredClone(p) : null;
+  clearFirstEntry(s); return result;
+}
+function associateFirstCandidate(s, p) {
+  // observedAt is the original event time; these fields describe association
+  // after the verified first selection, not a learner known during capture.
+  s.sources.push({ turnId: p.turnId, source: { sourceId: p.sourceId, channel: 'text', claimClass: 'client_observed', role: 'user',
+    text: p.text, sha256: p.sha256, observedAt: p.observedAt, clientContextId: s.context.clientContextId,
+    bindingPhase: 'selected_pending_execution', executionId: null } });
+  s.goalRequest = { generation: p.generation, turnId: p.turnId, clientContextId: s.context.clientContextId, sourceId: p.sourceId };
+  s.goalAdmissions = [];
+  // Only the accurately associated first turn is released; scope switches keep
+  // their existing whole-turn tombstones and cancellation-observation rules.
+  s.discardedTurns = s.discardedTurns.filter(turn => turn !== p.turnId);
 }
 function newContext(s, selected, turnId = null) {
+  clearFirstEntry(s);
   discardObservation(s);
   if (bounded(turnId, 256)) s.cancelDiscardedTurns = [...new Set([...(Array.isArray(s.cancelDiscardedTurns) ? s.cancelDiscardedTurns.filter(v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)) : []), sha(turnId)])].slice(-64);
   const initial = !s.context && s.hasSelectedContext !== true;
-  s.selection = selected; s.pendingSelection = null;
+  s.selection = selected; s.pendingSelection = null; s.subscriptionRecovery = null;
   s.context = { subject: selected.subject, familyId: selected.familyId, learnerId: selected.learnerId,
     selectionAttemptId: selected.selectionAttemptId, clientContextId: randomUUID() };
   s.challenge = null; s.controlSession = null; discardCancellation(s); s.writeOutcomeCapability = null; s.correctionCapability = null; s.hello = null; s.helloVerification = null; s.shortChallenge = null; s.active = false; s.ended = false; s.endedBinding = null; s.paused = null; s.pauseRecovery = null;
   s.binding = null; s.executionId = null; s.taskRef = null; s.sequence = 0; s.pendingTransition = null;
+  s.executionContract = null; s.packageRef = null;
+  s.goalRequest = null; s.goalAdmissions = [];
   s.loaded = null; s.contentRunId = randomUUID(); s.sources = []; s.submittedSourceIds = []; s.assistantTurns = [];
   s.initialAssistantTurn = initial ? turnId : null; s.hasSelectedContext = true;
 }
-function current(s, now, allowPaused = false) {
+// Entry-context evidence can refresh only access to an existing scope's
+// original operations. It never selects a learner or renews ordinary admission.
+function subscriptionRecoveryEvidence(s, data, now) {
+  const c = data.context, sub = c?.subscription;
+  if (!s.context || !s.selection || s.pendingSelection || !scopeEqual(s.selection, s.context)
+    || !uuid(s.selection.selectionAttemptId) || !Number.isFinite(Date.parse(s.selection.recheckAt))
+    || data.account.subject !== s.context.subject || c?.accountStatus !== 'active'
+    || !object(sub) || !['active', 'expired'].includes(sub.state)
+    || !bounded(sub.planKey) || sub.planKey === 'free' || sub.effectivePlanKey !== 'free'
+    || typeof sub.expiresAt !== 'string' || !Number.isFinite(Date.parse(sub.expiresAt)) || Date.parse(sub.expiresAt) > now
+    || c.accountAccess.status !== 'allowed' || c.accountAccess.expiresAt !== null) return null;
+  const families = c.families.filter(f => object(f) && f.familyId === s.context.familyId);
+  if (families.length !== 1 || !Array.isArray(families[0].learners)) return null;
+  const learners = families[0].learners.filter(l => object(l) && l.learnerId === s.context.learnerId);
+  if (learners.length !== 1 || !['allowed', 'not_entitled'].includes(learners[0].access)) return null;
+  return { context: structuredClone(s.context), selectionAttemptId: s.selection.selectionAttemptId, checkedAt: data.checkedAt };
+}
+function subscriptionRecoveryScope(s) {
+  const proof = s.subscriptionRecovery;
+  return !!proof && same(proof.context, s.context) && proof.selectionAttemptId === s.selection?.selectionAttemptId;
+}
+function subscriptionRecoveryCurrent(s, now) {
+  return subscriptionRecoveryScope(s) && !s.pendingSelection
+    && s.subscriptionRecovery.checkedAt === s.account?.checkedAt
+    && fresh(s.subscriptionRecovery.checkedAt, now, PLUGIN_LIMITS.accountFreshMs);
+}
+function invalidateSubscriptionRecovery(s) {
+  // Keep the known expiry, but remove its read authority until a fresh complete
+  // aggregate arrives. Account-only refresh cannot revive an older selection.
+  if (s.subscriptionRecovery) s.subscriptionRecovery.checkedAt = null;
+}
+function current(s, now, allowPaused = false, allowExpiredSubscription = false) {
   need(s?.account && s.selection && s.context && s.account.subject === s.context.subject
     && scopeEqual(s.selection, s.context), 'CURRENT_SELECTION_REQUIRED');
   const accountAt = Date.parse(s.account.checkedAt), selectionUntil = Date.parse(s.selection.recheckAt);
+  const recoveryOnly = subscriptionRecoveryScope(s);
+  const recovery = allowExpiredSubscription && subscriptionRecoveryCurrent(s, now);
+  need(!recoveryOnly || recovery, 'CURRENT_VERIFICATION_EXPIRED');
   need(!(Number.isFinite(accountAt) && now - accountAt > PLUGIN_LIMITS.accountFreshMs)
-    && !(Number.isFinite(selectionUntil) && selectionUntil <= now), 'CURRENT_VERIFICATION_EXPIRED');
-  need(fresh(s.account.checkedAt, now, PLUGIN_LIMITS.accountFreshMs) && expiry(s.selection.recheckAt, now), 'CURRENT_SELECTION_REQUIRED');
+    && !(!recovery && Number.isFinite(selectionUntil) && selectionUntil <= now), 'CURRENT_VERIFICATION_EXPIRED');
+  need(fresh(s.account.checkedAt, now, PLUGIN_LIMITS.accountFreshMs) && (recovery || expiry(s.selection.recheckAt, now)), 'CURRENT_SELECTION_REQUIRED');
   if (!allowPaused) need(s.active && !s.paused && !s.ended, 'CAPTURE_INACTIVE');
 }
 // Local dispatch budget: the existing 10s transport timeout plus round-trip /
@@ -342,13 +493,13 @@ function terminalOperation(dir, entry, state) {
     : exact(state, ['status', 'receipt', 'rejectionResult', 'rejectionCallKey']), 'OUTBOX_ARCHIVE_CORRUPT');
   need(['start', 'commit', 'end'].includes(entry.action) && teachingSameUuid(entry.request?.operationId, entry.operationId)
     && typeof entry.context?.subject === 'string' && uuid(entry.context.familyId) && uuid(entry.context.learnerId), 'OUTBOX_CORRUPT');
-  try { parseTeachingBusinessInput(entry.action, entry.request); }
+  try { parseOriginalBusinessInput(entry.action, entry.request); }
   catch (error) {
     if (error instanceof TeachingInputError && Object.hasOwn(businessInputCodes, error.kind)) throw new SeamError('OUTBOX_REQUEST_INCOMPATIBLE');
     throw error;
   }
   validateOperation(dir, entry.operationId, entry, state);
-  if (state.status === 'completed') need(validTeachingBusinessResult(entry.action, state.receipt, entry.request)
+  if (state.status === 'completed') need(validOriginalBusinessResult(entry.action, state.receipt, entry.request)
     && state.receipt.scope.familyId === entry.context.familyId && state.receipt.scope.learnerId === entry.context.learnerId,
   'ARCHIVE_RECEIPT_INVALID');
   return true;
@@ -535,7 +686,7 @@ function deferObservation(dir, s, event, now) {
   const textSha256 = teachingSha256(text);
   const old = [...s.sources, ...(p?.rows ?? [])].find(row => row.turnId === event.turn_id
     && row.source.role === 'user' && row.source.sha256 === textSha256);
-  if (old) { need(old.source.text === text, 'SOURCE_EVENT_CONFLICT'); return; }
+  if (old) { need(old.source.text === text, 'SOURCE_EVENT_CONFLICT'); latestGoalSource(s, old); return; }
   need(s.sources.length + (p?.rows.length ?? 0) < PLUGIN_LIMITS.sources && (p?.rows.length ?? 0) < 4
     && (p?.rows.reduce((n, row) => n + teachingUtf8Bytes(row.source.text), 0) ?? 0) + teachingUtf8Bytes(text) <= 12288, 'SOURCE_LIMIT');
   if (!p) {
@@ -547,6 +698,7 @@ function deferObservation(dir, s, event, now) {
   s.pendingObservation.rows.push({ turnId: event.turn_id, source: { sourceId: randomUUID(), channel: 'text', claimClass: 'client_observed', role: 'user', text,
     sha256: textSha256, observedAt: new Date(now).toISOString(), clientContextId: s.context.clientContextId,
     bindingPhase: 'bound', executionId: s.executionId } });
+  latestGoalSource(s, s.pendingObservation.rows.at(-1));
   observationAudit(s, s.pendingObservation, 'captured_pending', new Date(now).toISOString());
 }
 // Only an observed local lifecycle pause can be resumed. Session reads never
@@ -591,7 +743,8 @@ function sessionResult(dir, s, call, data, now) {
   if (ended) { discardObservation(s); s.active = false; if (!s.ended) { s.paused = 'SERVICE_ENDED'; s.pauseRecovery = null; } return; }
   need(!s.ended, 'SESSION_ENDED_MISMATCH');
   const resume = s.pauseRecovery;
-  if (resumablePauses.has(s.paused) && resume?.accountVerified && resume.selectionVerified
+  if (expiry(s.selection.recheckAt, now) && !subscriptionRecoveryCurrent(s, now)
+    && resumablePauses.has(s.paused) && resume?.accountVerified && resume.selectionVerified
     && uuid(resume.token) && call.recoveryToken === resume.token
     && same(resume.context, s.context) && same(resume.binding, s.binding) && resume.executionId === s.executionId
     && !s.pendingSelection && !pending && !s.pendingTransition && bindingMatches) {
@@ -633,6 +786,48 @@ function sources(s, semantic, bootstrap = false) {
   need(output.length <= 4 && output.reduce((n, item) => n + teachingUtf8Bytes(item.text), 0) <= 12288, 'SOURCE_LIMIT');
   return output;
 }
+// This is only local correlation of actual input events, not proof that the
+// assistant or a tool has started work. Repeated text keeps its source original
+// but invalidates the previous request's admission, just like other steering.
+function beginGoalRequest(s, event) {
+  s.goalAdmissions = [];
+  s.goalRequest = event.stop_hook_active === true ? null : { generation: randomUUID(), turnId: event.turn_id,
+    clientContextId: s.context?.clientContextId ?? null, sourceId: null };
+}
+function latestGoalSource(s, row) {
+  const request = s.goalRequest;
+  if (request && request.turnId === row.turnId && request.clientContextId === s.context?.clientContextId
+    && row.source.role === 'user' && teachingSameUuid(row.source.clientContextId, request.clientContextId)) request.sourceId = row.source.sourceId;
+}
+function currentGoalRequest(s) {
+  const request = s.goalRequest;
+  if (!exact(request, ['generation', 'turnId', 'clientContextId', 'sourceId']) || !uuid(request.generation)
+    || !bounded(request.turnId, 256) || !uuid(request.sourceId) || !uuid(request.clientContextId)
+    || !s.context || !teachingSameUuid(request.clientContextId, s.context.clientContextId)) return null;
+  const row = s.sources.find(item => teachingSameUuid(item.source.sourceId, request.sourceId));
+  return row && row.turnId === request.turnId && row.source.role === 'user' && row.source.claimClass === 'client_observed'
+    && teachingSameUuid(row.source.clientContextId, request.clientContextId) && typeof row.source.text === 'string'
+    && row.source.text.trim().length > 0 && row.source.sha256 === teachingSha256(row.source.text) ? request : null;
+}
+function goalAdmission(dir, s, taskRef, now) {
+  const request = currentGoalRequest(s);
+  need(request, 'CURRENT_USER_REQUEST_REQUIRED');
+  const candidates = s.goalAdmissions;
+  need(Array.isArray(candidates) && candidates.length <= PLUGIN_LIMITS.localOperations
+    && candidates.every(row => exact(row, ['taskId', 'operationId']) && uuid(row.taskId) && uuid(row.operationId)), 'CURRENT_REQUEST_ADMISSION_REQUIRED');
+  const pointer = candidates.find(row => teachingSameUuid(row.taskId, taskRef?.taskId));
+  const original = pointer && operation(dir, pointer.operationId), receipt = original?.receipt;
+  need(original && original.action === 'start' && original.status === 'completed' && goalContract(original.request)
+    && original.goalRequest && same(original.goalRequest, request) && same(original.context, s.context)
+    && teachingSameUuid(original.request.requestSourceId, request.sourceId)
+    && validOriginalBusinessResult('start', receipt, original.request)
+    && teachingSameUuid(receipt.executionId, s.executionId) && receipt.data.binding.epoch === s.binding?.epoch
+    && teachingSameUuid(receipt.data.binding.bindingId, s.binding?.bindingId)
+    && teachingSameUuid(receipt.taskRef?.taskId, taskRef?.taskId) && taskRef.revision >= receipt.taskRef.revision,
+  'CURRENT_REQUEST_ADMISSION_REQUIRED');
+  need(expiry(receipt.data.requestAdmission?.expiresAt, now), 'REQUEST_ADMISSION_EXPIRED');
+  return { operationId: original.operationId, requestSourceId: request.sourceId };
+}
 function observe(s, event, now) {
   current(s, now); const role = event.hook_event_name === 'UserPromptSubmit' ? 'user' : 'assistant';
   if (event.stop_hook_active === true) throw new SeamError('SYSTEM_CONTINUATION_NOT_USER_SOURCE');
@@ -649,18 +844,22 @@ function observe(s, event, now) {
   const textSha256 = teachingSha256(text);
   // A running host turn can receive several actual UserPromptSubmit events.
   // Preserve each different input; without a stable host message ID, an exact
-  // same-turn repeat is idempotent and is not another independent observation.
+  // same-turn repeat reuses the original source, but starts a new local request.
   // Stop still has one final message per turn and fails closed on conflict.
   const existing = s.sources.find(row => row.turnId === event.turn_id && row.source.role === role
     && (role !== 'user' || row.source.sha256 === textSha256));
-  if (existing) { need(existing.source.sha256 === textSha256 && existing.source.text === text, 'SOURCE_EVENT_CONFLICT'); return; }
+  if (existing) { need(existing.source.sha256 === textSha256 && existing.source.text === text, 'SOURCE_EVENT_CONFLICT'); if (role === 'user') latestGoalSource(s, existing); return; }
   need(s.sources.length < PLUGIN_LIMITS.sources, 'LOCAL_SOURCE_LIMIT');
   s.sources.push({ turnId: event.turn_id, source: { sourceId: randomUUID(), channel: 'text', claimClass: 'client_observed', role, text,
     sha256: textSha256, observedAt: new Date(now).toISOString(), clientContextId: s.context.clientContextId,
     bindingPhase: s.executionId ? 'bound' : 'selected_pending_execution', executionId: s.executionId } });
+  if (role === 'user') latestGoalSource(s, s.sources.at(-1));
   if (role === 'assistant' && s.initialAssistantTurn === event.turn_id) { s.initialAssistantTurn = null; s.assistantTurns = []; }
 }
-function business(s, action, a, now) {
+function business(s, action, a, now, dir) {
+  if (goalContract(a)) return goalBusiness(s, action, a, dir, now);
+  if (s.executionId && ['start', 'end', 'context', 'evidence', ...commitActions].includes(action))
+    need(s.executionContract !== GOAL_BUSINESS_CONTRACT, 'EXECUTION_CONTRACT_MISMATCH');
   const contract = TEACHING_BUSINESS_CONTRACT;
   if (action === 'start') {
     need(exact(a, ['taskAction']) && s.loaded, 'FULL_LOAD_REQUIRED');
@@ -692,19 +891,65 @@ function business(s, action, a, now) {
   need(action === 'context' ? exact(a, ['taskId', 'views', 'budgetBytes']) : exact(a, ['filter', 'cursor', 'limit', 'budgetBytes']), 'INPUT_INVALID');
   return parseCurrentBusinessInput(action, { contract, binding: s.binding, executionId: s.executionId, ...a });
 }
+function goalBusiness(s, action, a, dir, now) {
+  need(goalActions.has(action), 'BUSINESS_CONTRACT_INCOMPATIBLE');
+  const { contract, ...semantic } = a;
+  if (action === 'operation') {
+    need(exact(semantic, ['operationId', 'part', 'offset', 'budgetBytes']), 'INPUT_INVALID');
+    return parseCurrentBusinessInput(action, a);
+  }
+  if (s.executionId) need(s.executionContract === contract, 'EXECUTION_CONTRACT_MISMATCH');
+  if (action === 'start') {
+    need(exact(semantic, ['taskAction']), 'INPUT_INVALID');
+    const formal = semantic.taskAction?.kind === 'new' || semantic.taskAction?.kind === 'resume';
+    const currentRequest = formal ? currentGoalRequest(s) : null;
+    need(!formal || currentRequest, 'CURRENT_USER_REQUEST_REQUIRED');
+    if (formal) need(Array.isArray(s.goalAdmissions) && (s.goalAdmissions.length < PLUGIN_LIMITS.localOperations
+      || s.goalAdmissions.some(row => teachingSameUuid(row.taskId, semantic.taskAction.taskId ?? semantic.taskAction.taskRef?.taskId))), 'CURRENT_REQUEST_ADMISSION_REQUIRED');
+    return parseCurrentBusinessInput('start', { contract, operationId: randomUUID(), clientContextId: s.context.clientContextId,
+      expectedBinding: s.binding, selected: { familyId: s.context.familyId, learnerId: s.context.learnerId,
+        selectionAttemptId: s.context.selectionAttemptId }, packageRef: ownPackageRef(),
+      sources: sources(s, { taskAction: semantic.taskAction, sourceRefs: currentRequest ? [currentRequest.sourceId] : [] }, true),
+      ...(currentRequest ? { requestSourceId: currentRequest.sourceId } : {}), taskAction: semantic.taskAction });
+  }
+  need(s.binding && s.executionId && s.executionContract === contract, 'BINDING_REQUIRED');
+  if (action === 'goal' || action === 'checkpoint') {
+    need(Object.hasOwn(semantic, 'dependencies'), 'INPUT_INVALID');
+    const payload = { ...semantic }; delete payload.dependencies; delete payload.taskRef; delete payload.expectedSequence;
+    if (action === 'checkpoint' && Object.hasOwn(payload, 'textResult')) {
+      try { payload.textResult = goalTextResultFromPublic(payload.textResult); }
+      catch (error) {
+        if (error instanceof TeachingInputError) throw new SeamError(businessInputCodes[error.kind] ?? 'BUSINESS_INPUT_INVALID');
+        throw error;
+      }
+    }
+    const taskRef = Object.hasOwn(semantic, 'taskRef') ? semantic.taskRef : s.taskRef;
+    return parseCurrentBusinessInput('commit', { contract, operationId: randomUUID(), binding: s.binding, executionId: s.executionId,
+      taskRef, requestAdmission: goalAdmission(dir, s, taskRef, now),
+      expected: { learnerSequence: Object.hasOwn(semantic, 'expectedSequence') ? semantic.expectedSequence : s.sequence,
+        dependencies: semantic.dependencies }, sources: sources(s, payload), action, payload });
+  }
+  if (action === 'end') {
+    need(exact(semantic, []), 'INPUT_INVALID');
+    return parseCurrentBusinessInput('end', { contract, operationId: randomUUID(), binding: s.binding,
+      expectedEpoch: s.binding.epoch, action: 'end', target: null });
+  }
+  need(action === 'context' && exact(semantic, ['taskId', 'views', 'budgetBytes'], ['page']), 'INPUT_INVALID');
+  return parseCurrentBusinessInput(action, { contract, binding: s.binding, executionId: s.executionId, ...semantic });
+}
 function denialMatchesCall(call, proof) {
   try {
     const action = actionOf(call.name), wire = call.arguments._aidesk.payload.businessRequest;
     if (action !== call.action) return false;
     if (action === 'operation') {
-      const query = parseTeachingBusinessInput('operation', wire);
+      const query = parseOriginalBusinessInput('operation', wire);
       return teachingSameUuid(proof.operationId, query.operationId) && teachingSameUuid(proof.operationId, call.arguments.operationId);
     }
     const rpcAction = action === 'cancel_operation' ? call.arguments._aidesk.payload.cancellation?.originalAction
       : commitActions.has(action) ? 'commit' : action;
     if (!['start', 'commit', 'end'].includes(rpcAction)) return false;
-    const request = action === 'cancel_operation' ? parseTeachingBusinessInput(rpcAction, wire)
-      : unpackTeachingPluginRequest(rpcAction, wire, call.arguments);
+    const request = action === 'cancel_operation' ? parseOriginalBusinessInput(rpcAction, wire)
+      : unpackBusinessRequest(rpcAction, wire, call.arguments);
     return proof.rpcAction === rpcAction && teachingSameUuid(proof.operationId, request.operationId)
       && proof.requestSha256 === teachingRequestSha256(request) && (action !== 'cancel_operation'
         || teachingSameUuid(proof.operationId, call.arguments.operationId)
@@ -746,7 +991,9 @@ function reconcileDenial(dir, s, save) {
   call.outcome = 'rejected'; durable(path, call);
 }
 function accepted(dir, s, entry, receipt) {
-  need(validTeachingBusinessResult(entry.action, receipt, entry.request), 'RECEIPT_INVALID');
+  need(validOriginalBusinessResult(entry.action, receipt, entry.request), 'RECEIPT_INVALID');
+  if (goalContract(entry.request)) need(receipt.scope.familyId === entry.context.familyId
+    && receipt.scope.learnerId === entry.context.learnerId, 'RECEIPT_SCOPE_MISMATCH');
   status(dir, entry, { status: 'completed', receipt });
   if (!s.context || !teachingSameUuid(entry.context.clientContextId, s.context.clientContextId)) return;
   // Reading an old completed operation never adopts its historical projection.
@@ -759,12 +1006,27 @@ function accepted(dir, s, entry, receipt) {
   for (const source of entry.request.sources ?? []) if (!s.submittedSourceIds.some(id => teachingSameUuid(id, source.sourceId))) s.submittedSourceIds.push(source.sourceId);
   if (entry.action === 'end') {
     s.active = false; s.ended = true; s.paused = 'ENDED'; s.pauseRecovery = null;
+    s.goalRequest = null; s.goalAdmissions = [];
     s.endedBinding = { bindingId: receipt.data.bindingId, epoch: receipt.data.epoch, status: 'ended' }; s.binding = null; s.executionId = null;
     if (s.pendingSelection) newContext(s, s.pendingSelection);
   } else if (entry.action === 'start') {
     need(!s.ended, 'LATE_START_NOT_ADOPTED');
     s.binding = { bindingId: receipt.data.binding.bindingId, epoch: receipt.data.binding.epoch };
     s.executionId = receipt.executionId; s.taskRef = receipt.taskRef; s.sequence = receipt.committedSequence;
+    s.executionContract = entry.request.contract;
+    s.packageRef = goalContract(entry.request) ? structuredClone(entry.request.packageRef) : null;
+    if (goalContract(entry.request) && validGoalAccess(receipt.data.entitlement)) {
+      s.selection.goalAccess = structuredClone(receipt.data.entitlement);
+    }
+    // Original receipts stay recoverable after steering. Only this still-current
+    // request may adopt a formal admission; reading older history never does.
+    const request = currentGoalRequest(s);
+    if (goalContract(entry.request) && entry.goalRequest && request && same(entry.goalRequest, request)
+      && teachingSameUuid(entry.request.requestSourceId, request.sourceId) && receipt.taskRef && receipt.data.requestAdmission) {
+      s.goalAdmissions = (s.goalAdmissions ?? []).filter(row => !teachingSameUuid(row.taskId, receipt.taskRef.taskId));
+      need(s.goalAdmissions.length < PLUGIN_LIMITS.localOperations, 'CURRENT_REQUEST_ADMISSION_REQUIRED');
+      s.goalAdmissions.push({ taskId: receipt.taskRef.taskId, operationId: entry.operationId });
+    }
     if (s.pendingSelection) { s.active = false; s.paused = 'END_OLD_SCOPE_FIRST'; }
   } else if (s.executionId && teachingSameUuid(s.executionId, receipt.executionId)) {
     s.taskRef = receipt.taskRef; s.sequence = receipt.committedSequence;
@@ -800,6 +1062,11 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
         context: { subject: s.context?.subject ?? s.account?.subject ?? null, familyId: s.context?.familyId ?? null,
           learnerId: s.context?.learnerId ?? null, clientContextId: s.context?.clientContextId ?? null } });
       try {
+        if (s.firstEntry && !currentFirstEntry(s, now) || s.firstSelectionCandidate && !validFirstCandidate(s, now)) { clearFirstEntry(s); save(); }
+        if (['Interrupt', 'SessionEnd'].includes(e) || e === 'Stop' && s.firstSelectionCandidate
+          || e === 'UserPromptSubmit' && event.stop_hook_active === true
+          || s.firstSelectionCandidate && e !== 'UserPromptSubmit' && event.turn_id !== s.firstSelectionCandidate.turnId) { clearFirstEntry(s); save(); }
+        if (e === 'UserPromptSubmit') { beginGoalRequest(s, event); save(); }
         if (s.capacityPhase) checkCapacityLedger(s.capacityPhase);
         if (e === 'UserPromptSubmit') observeCapacityEntry(s, event.turn_id, now);
         // Account/selection/session rechecks during a load share its budget.
@@ -844,12 +1111,13 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           save();
         }
         if (accountReceipt && e === 'PostToolUse') {
+          invalidateSubscriptionRecovery(s);
           const r = result(event);
           need(!r.error, 'ACCOUNT_UNVERIFIED');
           if (name === 'aidesk_entry_context') {
-            // Only the original account evidence is adopted. The context is
-            // required as part of the complete aggregate, never as a learner
-            // selection or a replacement for domain/selection authorization.
+            // This aggregate never selects a learner. Its current owner/profile
+            // projection may support only the original scope's expiry recovery;
+            // the service still authorizes every signed recovery request.
             const context = r.data.context;
             need(exact(event.tool_input, []) && exact(r.data, ['account', 'checkedAt', 'context'])
               && object(context) && ['active', 'not_provisioned'].includes(context.accountStatus)
@@ -857,6 +1125,14 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
               && ['allowed', 'not_entitled', 'expired', 'suspended', 'conflict'].includes(context.accountAccess.status)
               && (context.accountAccess.expiresAt === null || Number.isFinite(Date.parse(context.accountAccess.expiresAt)))
               && Array.isArray(context.families), 'ENTRY_CONTEXT_UNVERIFIED');
+            if (Object.hasOwn(context, 'goalAccess')) need(validGoalAccess(context.goalAccess), 'ENTRY_CONTEXT_UNVERIFIED');
+            if (goalPreparationSelected(s) && r.data.account?.subject === s.context?.subject) {
+              const learner = context.families.find(f => f.familyId === s.context.familyId)?.learners?.find(l => l.learnerId === s.context.learnerId);
+              need(context.accountStatus === 'active' && !['suspended', 'conflict'].includes(context.accountAccess.status)
+                && context.subscription?.state !== 'suspended' && learner
+                && !['suspended', 'conflict', 'out_of_scope'].includes(learner.access), 'GOAL_SCOPE_REVOKED');
+              if (context.goalAccess?.state === 'blocked') pauseLocally(s, 'SERVICE_REJECTED');
+            }
             need(!s.account || Date.parse(r.data.checkedAt) >= Date.parse(s.account.checkedAt), 'ENTRY_ACCOUNT_STALE');
           }
           need(!r.error && r.data.account?.authenticated === true && r.data.account?.status === 'active'
@@ -869,11 +1145,18 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
             const cancelledTurns = s.cancelDiscardedTurns;
             const previouslySelected = !!s.context || s.hasSelectedContext === true;
             const discarded = s.discardedTurns;
+            const firstEntrySeen = s.firstEntrySeen;
             s = emptySession(event.session_id); s.hasSelectedContext = previouslySelected; s.discardedTurns = discarded; s.cancelDiscardedTurns = cancelledTurns;
+            s.firstEntrySeen = firstEntrySeen;
             Object.assign(s, capacity);
           }
           if (s.pendingObservation) need(Date.parse(r.data.checkedAt) >= Date.parse(s.pendingObservation.createdAt), 'PENDING_ACCOUNT_STALE');
           s.account = { subject: r.data.account.subject, checkedAt: r.data.checkedAt }; s.controlSession = null; s.controlRoundId = randomUUID();
+          if (name === 'aidesk_entry_context') {
+            armFirstEntry(s, event, r.data, now);
+            const recovery = subscriptionRecoveryEvidence(s, r.data, now);
+            if (recovery) { s.subscriptionRecovery = recovery; pauseLocally(s, 'VERIFICATION_EXPIRED'); }
+          }
           if (s.cancelObservation) {
             const p = s.cancelObservation;
             if (!same(p.context, s.context) || s.account.subject !== p.context.subject) discardCancellation(s);
@@ -886,7 +1169,9 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           capacityOutcome(true); save(); return {};
         }
         if (name === 'aidesk_check_selection') {
+          invalidateSubscriptionRecovery(s);
           if (e === 'PreToolUse') {
+            if (s.firstEntry || s.firstSelectionCandidate) freezeFirstSelection(s, event, now);
             // Rechecking the same learner does not change who an already
             // observed prompt belongs to. Keep its exact original source and
             // allow the actual assistant Stop later in this turn. A scope
@@ -903,11 +1188,18 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           }
           if (e === 'PostToolUse') {
             const r = result(event), a = event.tool_input;
-            need(!r.error && s.account && exact(a, ['familyId', 'learnerId', 'attemptId']) && uuid(a.attemptId)
+            const v2 = a?.contract === GOAL_BUSINESS_CONTRACT;
+            need(!r.error && s.account && exact(a, ['familyId', 'learnerId', 'attemptId'], v2 ? ['contract'] : []) && uuid(a.attemptId)
               && r.data.status === 'checked' && r.data.subject === s.account.subject && r.data.attemptId === a.attemptId
               && r.data.family?.familyId === a.familyId && r.data.learner?.learnerId === a.learnerId
               && fresh(r.data.checkedAt, now, PLUGIN_LIMITS.accountFreshMs) && expiry(r.data.recheckAt, now), 'SELECTION_UNVERIFIED');
-            const selected = { subject: r.data.subject, familyId: a.familyId, learnerId: a.learnerId, selectionAttemptId: a.attemptId, recheckAt: r.data.recheckAt };
+            need(v2 ? r.data.contract === GOAL_BUSINESS_CONTRACT && validGoalAccess(r.data.goalAccess)
+              && fresh(r.data.goalAccess.checkedAt, now, PLUGIN_LIMITS.accountFreshMs) && r.data.goalAccess.state !== 'blocked'
+              && r.data.goalAccess.eligibleLearnerIds.includes(a.learnerId)
+              : !Object.hasOwn(r.data, 'contract') && !Object.hasOwn(r.data, 'goalAccess'), 'SELECTION_UNVERIFIED');
+            const selected = { subject: r.data.subject, familyId: a.familyId, learnerId: a.learnerId, selectionAttemptId: a.attemptId, recheckAt: r.data.recheckAt,
+              ...(v2 ? { contract: GOAL_BUSINESS_CONTRACT, goalAccess: structuredClone(r.data.goalAccess) } : {}) };
+            const firstCandidate = firstSelectionResult(s, event, selected, now);
             s.controlSession = null; s.controlRoundId = randomUUID();
             if (s.cancelObservation) {
               const p = s.cancelObservation;
@@ -920,9 +1212,12 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
             if (s.context && !scopeEqual(selected, s.context) && (s.binding || unresolved(dir, s.context))) {
               s.pendingSelection = selected; s.active = false; s.paused = 'END_OLD_SCOPE_FIRST';
             }
-            else if (!s.context || !scopeEqual(selected, s.context) || s.ended) newContext(s, selected, event.turn_id);
+            else if (!s.context || !scopeEqual(selected, s.context) || s.ended) {
+              newContext(s, selected, event.turn_id);
+              if (firstCandidate) associateFirstCandidate(s, firstCandidate);
+            }
             else {
-              s.selection = selected;
+              s.selection = selected; s.subscriptionRecovery = null; // A different pending scope cannot renew this one.
               if (resumablePauses.has(s.paused) && s.pauseRecovery?.accountVerified
                 && same(s.pauseRecovery.context, s.context)) {
                 s.pauseRecovery.token = randomUUID(); s.pauseRecovery.selectionVerified = true;
@@ -935,6 +1230,9 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           pauseLocally(s, e.toUpperCase()); save(); return {};
         }
         if (e === 'UserPromptSubmit' || e === 'Stop') {
+          if (e === 'UserPromptSubmit' && currentFirstEntry(s, now)) {
+            captureFirstCandidate(s, event, now); save(); return {};
+          }
           if (e === 'UserPromptSubmit' && s.pendingObservation) {
             deferObservation(dir, s, event, now); save();
             return notice(e, 'CURRENT_VERIFICATION_EXPIRED_INPUT_QUARANTINED');
@@ -970,12 +1268,29 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
         const callPath = join(dir, 'calls', `${sha(`${event.session_id}\0${event.tool_use_id}`)}.json`);
         if (e === 'PreToolUse') {
           need(!existsSync(callPath), 'DUPLICATE_TOOL_EVENT');
-          current(s, now, action === 'session' || readOnlyRecovery.has(action) || action === 'end' || action === 'cancel_operation');
+          current(s, now, action === 'session' || readOnlyRecovery.has(action) || action === 'end' || action === 'cancel_operation', expiredSubscriptionRecovery.has(action));
           need(s.callCount < PLUGIN_LIMITS.calls, 'LOCAL_CALL_LIMIT');
           need(object(event.tool_input), 'INPUT_INVALID');
           const a = structuredClone(event.tool_input); delete a._aidesk; canonicalTeachingJson(a);
+          if (goalPreparationSelected(s)) {
+            need(goalContract(a) || ['session', 'sources', 'text_digest', 'ids', 'operation', 'recover_request', 'discover', 'cancel_operation'].includes(action),
+              'SELECTION_CONTRACT_MISMATCH');
+            if (goalContract(a) && (action === 'goal' || action === 'checkpoint' || action === 'start' && a.taskAction?.kind !== 'prepare')) {
+              const access = s.selection.goalAccess;
+              need(validGoalAccess(access) && fresh(access.checkedAt, now, PLUGIN_LIMITS.accountFreshMs), 'CURRENT_VERIFICATION_REFRESH_REQUIRED');
+              need(access.eligibleLearnerIds.includes(s.context.learnerId)
+                && (action === 'start' && access.state === 'eligible' || ['active', 'annual'].includes(access.state) && expiry(access.expiresAt, now)),
+                'GOAL_BUSINESS_NOT_ADMITTED');
+            }
+          }
+          if (goalContract(a)) need(goalActions.has(action), 'BUSINESS_CONTRACT_INCOMPATIBLE');
+          if (['operation', 'recover_request'].includes(action) && uuid(a.operationId)) {
+            const original = operation(dir, a.operationId);
+            if (original) need(original.request.contract === (goalContract(a) ? GOAL_BUSINESS_CONTRACT : TEACHING_BUSINESS_CONTRACT),
+              'ORIGINAL_CONTRACT_MISMATCH');
+          }
           // Check before business() creates an operation ID or any call/outbox is
-          // persisted. Reads retain the existing strictly-unexpired contract.
+          // persisted. Only exact original-operation recovery has the expiry exception.
           if (action === 'start' || commitActions.has(action) || action === 'end') {
             need(!unresolved(dir, s.context), 'UNKNOWN_ORIGINAL_OPERATION');
             need(!s.pendingTransition, 'ORIGINAL_TRANSITION_UNRESOLVED');
@@ -986,15 +1301,16 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           const payload = { businessRequest: null, contentRequest: null, sourcePage: null, localOperations: [] };
           const nearChallenge = !s.challenge || Date.parse(s.challenge.expiresAt) - now <= PLUGIN_LIMITS.writeDispatchWindowMs;
           const shortChecked = shortChallengeChecked(s);
-          if (action === 'session' && (!typedWriteCapable(s) || !Object.hasOwn(s, 'correctionCapability')
+          if (action === 'session' && (!typedWriteCapable(s) || !goalPreparationSelected(s) && !Object.hasOwn(s, 'correctionCapability')
             || nearChallenge && (!shortChecked || !expiry(s.challenge.expiresAt, now)))) {
             need(!shortChecked || !typedWriteCapable(s), 'CHALLENGE_REFRESH_RECHECK_REQUIRED');
             need(exact(a, []), 'INPUT_INVALID');
             // Legacy sessions retained a completed hello beside their challenge.
             // New pending hellos carry verification metadata and keep their ID.
-            if (!s.hello || s.hello.resultContract !== TEACHING_WRITE_OUTCOME_CONTRACT || s.challenge && !s.helloVerification) {
+            if (!s.hello || s.hello.resultContract !== TEACHING_WRITE_OUTCOME_CONTRACT || s.challenge && !s.helloVerification
+              || goalPreparationSelected(s) && Object.hasOwn(s.hello, 'correctionContract')) {
               s.hello = { protocol: PLUGIN_PROTOCOL, kind: 'hello', resultContract: TEACHING_WRITE_OUTCOME_CONTRACT,
-                correctionContract: TEACHING_CORRECTION_BASIS_CONTRACT, helloId: randomUUID(), keyId: ownKey.keyId,
+                ...(!goalPreparationSelected(s) ? { correctionContract: TEACHING_CORRECTION_BASIS_CONTRACT } : {}), helloId: randomUUID(), keyId: ownKey.keyId,
                 publicKey: ownKey.publicKey, context: s.context };
               s.helloVerification = { accountCheckedAt: s.account.checkedAt, selectionAttemptId: s.selection.selectionAttemptId };
             }
@@ -1010,6 +1326,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
               need(local.length <= PLUGIN_LIMITS.localOperations, 'LOCAL_DISCOVERY_LIMIT');
               payload.localOperations = local.map(row => ({ operationId: row.operationId, action: row.action, requestSha256: row.requestSha256,
                 clientContextId: row.context.clientContextId, status: row.status === 'prepared' ? 'unknown' : row.status,
+                ...(row.request.contract === GOAL_BUSINESS_CONTRACT ? { businessContract: GOAL_BUSINESS_CONTRACT } : {}),
                 // Optional diagnostic metadata; old outboxes remain recoverable.
                 ...(typeof row.preparedAt === 'string' && row.preparedAt.length <= 32 && Number.isFinite(Date.parse(row.preparedAt))
                   && new Date(row.preparedAt).toISOString() === row.preparedAt ? { preparedAt: row.preparedAt } : {}) }));
@@ -1022,7 +1339,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
                 && p.observation.text === a.quote, 'CANCELLATION_INTENT_UNVERIFIED');
               const original = operation(dir, a.operationId);
               need(original && scopeEqual(original.context, s.context) && ['start', 'commit', 'end'].includes(original.action), 'CANCELLATION_ORIGINAL_UNAVAILABLE');
-              parseTeachingBusinessInput(original.action, original.request);
+              parseOriginalBusinessInput(original.action, original.request);
               payload.businessRequest = structuredClone(original.request);
               payload.cancellation = { originalAction: original.action, requestSha256: original.requestSha256, observation: structuredClone(p.observation) };
             } else if (action === 'sources') {
@@ -1067,8 +1384,11 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
               if (action === 'ids') need(exact(a, ['count']) && Number.isInteger(a.count) && a.count >= 1 && a.count <= 16, 'INPUT_INVALID');
               if (action === 'text_digest') need(exact(a, ['text']) && typeof a.text === 'string' && a.text.length > 0 && teachingUtf8Bytes(a.text) <= 4096, 'INPUT_INVALID');
               if (action === 'recover_request') {
-                need(exact(a, ['operationId', 'expectedSha256', 'budgetBytes']) && /^[a-f0-9]{64}$/.test(a.expectedSha256), 'INPUT_INVALID');
-                parseTeachingBusinessInput('operation', { contract: TEACHING_BUSINESS_CONTRACT, operationId: a.operationId, part: 'request', offset: 0, budgetBytes: a.budgetBytes });
+                need(exact(a, ['operationId', 'expectedSha256', 'budgetBytes', ...(goalContract(a) ? ['contract'] : [])])
+                  && /^[a-f0-9]{64}$/.test(a.expectedSha256), 'INPUT_INVALID');
+                if (goalContract(a)) need(Number.isSafeInteger(a.budgetBytes) && a.budgetBytes >= 8192, 'INPUT_INVALID');
+                parseCurrentBusinessInput('operation', { contract: goalContract(a) ? GOAL_BUSINESS_CONTRACT : TEACHING_BUSINESS_CONTRACT,
+                  operationId: a.operationId, part: 'request', offset: 0, budgetBytes: a.budgetBytes });
               }
             } else {
               const write = action === 'start' || commitActions.has(action) || action === 'end';
@@ -1076,18 +1396,20 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
                 archiveTerminalOperations(dir);
                 need(operationFiles(dir).length < PLUGIN_LIMITS.operations, 'LOCAL_OUTBOX_LIMIT');
               }
-              const request = business(s, action, a, now);
-              if (usesTeachingCorrectionBasis(commitActions.has(action) ? 'commit' : action, request)) {
+              const request = business(s, action, a, now, dir);
+              if (!goalContract(request) && usesTeachingCorrectionBasis(commitActions.has(action) ? 'commit' : action, request)) {
                 need(correctionBasisCapable(s), 'CORRECTION_BASIS_UNAVAILABLE');
               }
-              payload.businessRequest = packTeachingPluginRequest(commitActions.has(action) ? 'commit' : action, request);
+              payload.businessRequest = (goalContract(request) ? packGoalPluginRequest : packTeachingPluginRequest)(
+                commitActions.has(action) ? 'commit' : action, request);
               if (write) {
                 preparing = { protocol: PLUGIN_PROTOCOL, operationId: request.operationId, action: commitActions.has(action) ? 'commit' : action,
-                  context: structuredClone(s.context), tool: name, semanticArguments: a, request, requestSha256: teachingRequestSha256(request), preparedAt: new Date(now).toISOString() };
+                  context: structuredClone(s.context), tool: name, semanticArguments: a, request, requestSha256: teachingRequestSha256(request), preparedAt: new Date(now).toISOString(),
+                  ...(goalContract(request) && (request.requestSourceId || request.requestAdmission) ? { goalRequest: structuredClone(s.goalRequest) } : {}) };
               }
             }
             envelope = { protocol: PLUGIN_PROTOCOL, kind: 'signed', ...(typedWriteCapable(s) ? { resultContract: TEACHING_WRITE_OUTCOME_CONTRACT } : {}),
-              ...(correctionAcknowledged(s) ? { correctionContract: TEACHING_CORRECTION_BASIS_CONTRACT } : {}), challengeId: s.challenge.challengeId, nonce: s.challenge.nonce,
+              ...(!goalPreparationSelected(s) && correctionAcknowledged(s) ? { correctionContract: TEACHING_CORRECTION_BASIS_CONTRACT } : {}), challengeId: s.challenge.challengeId, nonce: s.challenge.nonce,
               keyId: ownKey.keyId, context: s.context, callId: randomUUID(), tool: name, argumentsSha256: teachingRequestSha256(a), issuedAt: new Date(now).toISOString(), payload };
             envelope.signature = sign(null, Buffer.from(canonicalTeachingJson(envelope)), ownKey.privateKey).toString('base64url');
           }
@@ -1114,6 +1436,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           }
           if (action === 'cancel_operation') { discardCancellation(s); save(); }
           durable(callPath, { protocol: PLUGIN_PROTOCOL, name, action, toolUseId: event.tool_use_id, context: s.context,
+            ...(preparing?.goalRequest ? { goalRequest: structuredClone(preparing.goalRequest) } : {}),
             turnId: event.turn_id, observationId: s.pendingObservation?.id ?? null,
             controlRoundId: action === 'session' && envelope.kind === 'signed' ? s.controlRoundId ?? null : null,
             controlVerificationToken: action === 'session' && envelope.kind === 'signed' && s.cancelObservation?.turnId === event.turn_id
@@ -1133,8 +1456,8 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
         const r = result(event), bridge = call.arguments._aidesk;
         const wire = bridge.payload?.businessRequest;
         const request = wire ? action === 'cancel_operation'
-          ? parseTeachingBusinessInput(bridge.payload.cancellation?.originalAction, wire)
-          : unpackTeachingPluginRequest(commitActions.has(action) ? 'commit' : action, wire, call.arguments) : null;
+          ? parseOriginalBusinessInput(bridge.payload.cancellation?.originalAction, wire)
+          : unpackBusinessRequest(commitActions.has(action) ? 'commit' : action, wire, call.arguments) : null;
         const writeAction = request && (action === 'start' || commitActions.has(action) || action === 'end') ? commitActions.has(action) ? 'commit' : action : null;
         if (!r.error && r.data.status === 'rejected') {
           foreignRejection = !same(s.context, call.context);
@@ -1207,22 +1530,24 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
             s.hello = null; s.helloVerification = null;
           } else need(s.challenge && same(s.challenge, c), 'CHALLENGE_SUPERSEDED');
           if (r.data.ended) { discardObservation(s); s.active = false; s.paused = 'SERVICE_ENDED'; s.pauseRecovery = null; }
-          else if (!s.ended && !s.paused) {
+          else if (!s.ended && !s.paused && expiry(s.selection.recheckAt, now) && !subscriptionRecoveryCurrent(s, now)) {
             s.active = true;
             if (s.initialAssistantTurn === event.turn_id) s.assistantTurns = [{ turnId: event.turn_id, clientContextId: s.context.clientContextId }];
           }
         } else if (action === 'cancel_operation') {
           const original = operation(dir, call.arguments.operationId);
-          const query = { contract: TEACHING_BUSINESS_CONTRACT, operationId: call.arguments.operationId, part: 'receipt', offset: 0, budgetBytes: 24576 };
-          need(original && scopeEqual(original.context, call.context) && validTeachingBusinessResult('operation', r.data, query)
+          const query = { contract: original?.request.contract, operationId: call.arguments.operationId, part: 'receipt', offset: 0, budgetBytes: 24576 };
+          need(original && scopeEqual(original.context, call.context) && validOriginalBusinessResult('operation', r.data, query)
             && r.data.status === 'completed' && r.data.receipt && r.data.requestSha256 === original.requestSha256, 'CANCELLATION_RESULT_INVALID');
           accepted(dir, s, original, r.data.receipt);
         } else if (request) {
           const rpcAction = commitActions.has(action) ? 'commit' : action;
-          need(validTeachingBusinessResult(rpcAction, r.data, request), 'BUSINESS_RESULT_INVALID');
+          need(validOriginalBusinessResult(rpcAction, r.data, request), 'BUSINESS_RESULT_INVALID');
           if (writeAction) accepted(dir, s, operation(dir, request.operationId), r.data);
           else if (action === 'context') {
             need(r.data.scope.familyId === call.context.familyId && r.data.scope.learnerId === call.context.learnerId, 'CONTEXT_SCOPE_MISMATCH');
+            if (goalContract(request)) need(s.executionContract === GOAL_BUSINESS_CONTRACT && same(r.data.packageRef, s.packageRef),
+              'CONTEXT_PACKAGE_MISMATCH');
             if (same(s.context, call.context) && same(s.binding, request.binding) && teachingSameUuid(s.executionId, request.executionId))
               s.sequence = Math.max(s.sequence, r.data.snapshotSequence);
           }
@@ -1233,10 +1558,11 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           }
         } else if (action === 'session') {
           sessionResult(dir, s, call, r.data, now);
-          current(s, now, true);
-          if (uuid(s.controlRoundId) && call.controlRoundId === s.controlRoundId) s.controlSession = { context: structuredClone(s.context), challengeId: s.challenge.challengeId,
+          current(s, now, true, true);
+          const liveSelection = expiry(s.selection.recheckAt, now) && !subscriptionRecoveryCurrent(s, now);
+          if (liveSelection && uuid(s.controlRoundId) && call.controlRoundId === s.controlRoundId) s.controlSession = { context: structuredClone(s.context), challengeId: s.challenge.challengeId,
             accountCheckedAt: s.account.checkedAt, selectionAttemptId: s.selection.selectionAttemptId };
-          if (call.controlRoundId === s.controlRoundId && s.cancelObservation && call.turnId === s.cancelObservation.turnId
+          if (liveSelection && call.controlRoundId === s.controlRoundId && s.cancelObservation && call.turnId === s.cancelObservation.turnId
             && call.controlVerificationToken === s.cancelObservation.verification.token
             && s.cancelObservation.verification.accountVerified && s.cancelObservation.verification.selectionVerified)
             s.cancelObservation.verification.sessionVerified = true;
@@ -1278,6 +1604,15 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
               && teachingSameUuid(r.data.request?.operationId, call.arguments.operationId)
               && r.data.requestSha256 === call.arguments.expectedSha256
               && teachingRequestSha256(r.data.request) === r.data.requestSha256, 'RECOVERY_RESULT_INVALID');
+          if (r.data.status === 'complete') {
+            need(r.data.request.contract === (goalContract(call.arguments) ? GOAL_BUSINESS_CONTRACT : TEACHING_BUSINESS_CONTRACT),
+              'ORIGINAL_CONTRACT_MISMATCH');
+            if (goalContract(r.data.request)) {
+              const originalAction = Object.hasOwn(r.data.request, 'packageRef') ? 'start'
+                : Object.hasOwn(r.data.request, 'executionId') ? 'commit' : 'end';
+              parseOriginalBusinessInput(originalAction, r.data.request);
+            }
+          }
         }
         call.outcome = 'completed'; durable(callPath, call); save();
         // Preserve a completed original operation, but do not deliver its
@@ -1286,6 +1621,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
         capacityOutcome(true); save();
         return {};
       } catch (error) {
+        clearFirstEntry(s);
         if (e === 'PostToolUse') {
           try { capacityOutcome(false); } catch { /* Keep the original accounting/validation failure. */ }
         }
@@ -1307,7 +1643,7 @@ export async function processTeachingPluginEvent(event, { dataRoot = process.env
           if (s.correctionCapability) s.correctionCapability.ready = false;
           s.controlSession = null; s.controlRoundId = randomUUID();
         }
-        if (e === 'PostToolUse' && known) { s.active = false; s.paused = 'UNVERIFIED_SELECTION'; }
+        if (e === 'PostToolUse' && known) { invalidateSubscriptionRecovery(s); s.active = false; s.paused = 'UNVERIFIED_SELECTION'; }
         if (['UserPromptSubmit', 'Stop'].includes(e)) {
           s.discardedTurns = [...new Set([...s.discardedTurns, event.turn_id])].slice(-64);
           s.initialAssistantTurn = null; s.assistantTurns = [];

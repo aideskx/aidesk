@@ -39,13 +39,47 @@ export function inspectInstallation(value) {
   return { version: plugin.version, pluginId: ID, sourcePath };
 }
 
+// config/read may include unrelated private settings. Never return that response.
+function marketplaceProjection(value) {
+  const entry = isObject(value?.config?.marketplaces) ? value.config.marketplaces[MARKETPLACE] : null;
+  if (!isObject(entry) || entry.source_type !== 'git' || !canonicalRepository(entry.source)
+    || entry.ref != null && (typeof entry.ref !== 'string' || !entry.ref.trim() || entry.ref.length > 1024))
+    throw new Error('invalid_marketplace_configuration');
+  return { source_type: entry.source_type, source: entry.source, ref: entry.ref ?? null };
+}
+
+async function configuredSourceError(readSource) {
+  try {
+    const value = await readSource();
+    if (!isObject(value) || value.source_type !== 'git' || !canonicalRepository(value.source)
+      || !Object.hasOwn(value, 'ref') || value.ref !== null && (typeof value.ref !== 'string' || !value.ref.trim() || value.ref.length > 1024))
+      return 'marketplace_source_unavailable';
+    return value.ref !== null && value.ref !== 'main' ? 'pinned_source' : null;
+  } catch { return 'marketplace_source_unavailable'; }
+}
+
+// A release check, package verification or source RPC may outlive the user's
+// installation choice. Re-read just before each mutation; never repair over a
+// different version or treat the earlier inventory as current authorization.
+async function mutationInstallation(inventory, expected) {
+  let current;
+  try { current = inspectInstallation(await inventory()); }
+  catch { return { error: 'readback_failed', version: null }; }
+  if (current.error) return { error: current.error, version: null };
+  const error = current.sourcePath !== expected.sourcePath ? 'source_changed'
+    : current.version !== expected.version ? 'installed_version_changed' : null;
+  return { error, version: current.version };
+}
+
 /** Deterministic transaction, with host and network effects supplied by adapters. */
-export async function updatePlugin({ inventory, check, upgrade, repair, snapshot, verify, apply = false }) {
+export async function updatePlugin({ inventory, readSource, check, upgrade, repair, snapshot, verify, apply = false }) {
   let before;
   try { before = inspectInstallation(await inventory()); }
   catch { return { status: 'host_unavailable', changed: false }; }
   if (before.error) return { status: 'blocked', reason: before.error, changed: false };
   const base = { pluginId: ID, previousVersion: before.version, installedVersion: before.version };
+  const sourceError = await configuredSourceError(readSource);
+  if (sourceError) return { ...base, status: 'blocked', reason: sourceError, changed: false };
   let release;
   try { release = await check(before.version); }
   catch { return { ...base, status: 'check_unavailable', changed: false }; }
@@ -69,6 +103,12 @@ export async function updatePlugin({ inventory, check, upgrade, repair, snapshot
   if (!apply) return { ...target, status: 'update_available', changed: false };
   let previousDigest;
   try { previousDigest = await verify(before.version, null); } catch { /* Update may repair an incomplete old cache. */ }
+  // Settings may have changed while checking the release or verifying the package.
+  const beforeUpgradeError = await configuredSourceError(readSource);
+  if (beforeUpgradeError) return { ...target, status: 'blocked', reason: beforeUpgradeError, changed: false };
+  const upgradeInstallation = await mutationInstallation(inventory, before);
+  if (upgradeInstallation.error) return { ...target, installedVersion: upgradeInstallation.version,
+    status: 'blocked', reason: upgradeInstallation.error, changed: null };
   // One fetch/upgrade, then at most one verified single-plugin cache repair.
   let commandFailed;
   let indeterminate = false;
@@ -82,6 +122,8 @@ export async function updatePlugin({ inventory, check, upgrade, repair, snapshot
     catch { return { ...target, status: 'installation_unknown', changed: null, reason: 'readback_failed' }; }
     if (after.error || after.sourcePath !== before.sourcePath)
       return { ...target, status: 'installation_unknown', changed: null, reason: after.error ?? 'source_changed' };
+    const afterSourceError = await configuredSourceError(readSource);
+    if (afterSourceError) return { ...target, status: 'installation_unknown', changed: null, reason: afterSourceError };
     const result = { ...target, installedVersion: after.version };
     const advanced = comparePluginVersions(after.version, before.version);
     if (advanced !== 0 && advanced !== 1)
@@ -108,6 +150,11 @@ export async function updatePlugin({ inventory, check, upgrade, repair, snapshot
       let ready = false;
       try { ready = await snapshot(release.latestVersion, release) === true; } catch { /* No verified snapshot, no repair. */ }
       if (ready) {
+        const beforeRepairError = await configuredSourceError(readSource);
+        if (beforeRepairError) return { ...result, status: 'installation_unknown', changed: null, reason: beforeRepairError };
+        const repairInstallation = await mutationInstallation(inventory, after);
+        if (repairInstallation.error) return { ...result, installedVersion: repairInstallation.version,
+          status: 'installation_unknown', reason: repairInstallation.error, changed: null };
         try { await repair(); } catch (error) { commandFailed = true; indeterminate = error?.indeterminate === true; }
         continue;
       }
@@ -120,13 +167,19 @@ export async function updatePlugin({ inventory, check, upgrade, repair, snapshot
   }
 }
 
-export function runCli(executable, args, timeoutMs = 30_000) {
+export function readMarketplaceSource(executable, timeoutMs = 30_000) {
+  return runCli(executable, ['app-server'], timeoutMs, 'marketplace-config');
+}
+
+export function runCli(executable, args, timeoutMs = 30_000, mode = 'json') {
+  if (!['json', 'marketplace-config'].includes(mode)) return Promise.reject(new Error('invalid_host_mode'));
   return new Promise((resolvePromise, reject) => {
     // A stable working directory survives the host removing the executing old package.
     const grouped = process.platform !== 'win32';
     const child = spawn(executable, args, { cwd: tmpdir(), shell: false, windowsHide: true,
-      detached: grouped, stdio: ['ignore', 'pipe', 'pipe'] });
+      detached: grouped, stdio: [mode === 'marketplace-config' ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let output = ''; let overflow = false; let timedOut = false; let settled = false;
+    let rpcState = 'initialize'; let rpcResult; let rpcBytes = 0; let protocolFailed = false;
     let killTimer; let closeTimer;
     const stop = signal => {
       try { if (grouped && child.pid) process.kill(-child.pid, signal); else child.kill(signal); }
@@ -136,19 +189,52 @@ export function runCli(executable, args, timeoutMs = 30_000) {
       if (settled) return;
       settled = true;
       clearTimeout(timer); clearTimeout(killTimer); clearTimeout(closeTimer);
-      child.stdout.destroy(); child.stderr.destroy(); child.unref();
+      output = ''; rpcResult = undefined;
+      child.stdin?.destroy(); child.stdout.destroy(); child.stderr.destroy(); child.unref();
       if (error) reject(error); else resolvePromise(value);
     };
     const abort = () => {
+      if (settled) return;
       stop('SIGTERM');
       killTimer ??= setTimeout(() => stop('SIGKILL'), 1_000);
       closeTimer ??= setTimeout(() => finish(Object.assign(new Error('host_command_timeout'), { indeterminate: true })), 2_000);
     };
     const timer = setTimeout(() => { timedOut = true; abort(); }, timeoutMs);
+    const send = message => child.stdin.write(`${JSON.stringify(message)}\n`);
+    const receive = line => {
+      const message = JSON.parse(line);
+      if (!isObject(message)) throw new Error('invalid_rpc_response');
+      // Notifications are not retained. Interactive requests are not approved.
+      if (typeof message.method === 'string' && !Object.hasOwn(message, 'id')) return;
+      if (Object.hasOwn(message, 'error') || Object.hasOwn(message, 'method') || !isObject(message.result))
+        throw new Error('invalid_rpc_response');
+      if (rpcState === 'initialize' && message.id === 1) {
+        rpcState = 'config';
+        send({ method: 'initialized', params: {} });
+        send({ id: 2, method: 'config/read', params: { includeLayers: false, cwd: tmpdir() } });
+      } else if (rpcState === 'config' && message.id === 2) {
+        rpcResult = marketplaceProjection(message.result);
+        rpcState = 'done';
+        child.stdin.end();
+      } else throw new Error('unexpected_rpc_response');
+    };
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', part => {
+      if (settled || overflow || protocolFailed) return;
       output += part;
-      if (output.length > 1_048_576) { overflow = true; output = ''; abort(); }
+      rpcBytes += Buffer.byteLength(part);
+      if (output.length > 1_048_576 || mode === 'marketplace-config' && rpcBytes > 1_048_576) {
+        overflow = true; output = ''; abort(); return;
+      }
+      if (mode === 'marketplace-config') {
+        try {
+          let end;
+          while ((end = output.indexOf('\n')) !== -1) {
+            const line = output.slice(0, end); output = output.slice(end + 1);
+            if (line.trim()) receive(line);
+          }
+        } catch { protocolFailed = true; output = ''; rpcResult = undefined; abort(); }
+      }
     });
     child.stderr.resume();
     child.once('error', () => finish(new Error('host_command_unavailable')));
@@ -157,8 +243,17 @@ export function runCli(executable, args, timeoutMs = 30_000) {
         finish(Object.assign(new Error(timedOut ? 'host_command_timeout' : 'host_command_failed'),
           { indeterminate: timedOut || overflow })); return;
       }
+      if (mode === 'marketplace-config') {
+        if (protocolFailed || rpcState !== 'done' || output.trim()) finish(new Error('invalid_host_response'));
+        else finish(null, rpcResult);
+        return;
+      }
       try { finish(null, JSON.parse(output)); } catch { finish(new Error('invalid_host_response')); }
     });
+    if (mode === 'marketplace-config') {
+      child.stdin.on('error', () => { protocolFailed = true; abort(); });
+      send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'aidesk_plugin_updater', version: '1.0.0' } } });
+    }
   });
 }
 
@@ -227,6 +322,7 @@ async function main() {
     const result = await updatePlugin({
       apply,
       inventory,
+      readSource: () => readMarketplaceSource(codex),
       // A new checker per phase avoids treating the preflight's cached release
       // as the publication after a concurrent Git update.
       check: installedVersion => createPluginUpdateChecker().check(installedVersion),

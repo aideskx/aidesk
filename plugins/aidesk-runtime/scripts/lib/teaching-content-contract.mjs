@@ -1,4 +1,4 @@
-// Generated from services/authority-api/src/teaching-content-contract.ts; source SHA-256 86f2845b30f324ddd34832578e8e2dddbdf6f4dca3669f1525a2090e4941755a.
+// Generated from services/authority-api/src/teaching-content-contract.ts; source SHA-256 b5e3e3860c5752a5269cf2541fbe009ff207bc7b337962a0fe01c0f0e7a55632.
 // Run node tooling/build-plugin-runtime.mjs; do not edit this copy.
 import { createHash } from "node:crypto";
 import { isTextId, isUuid } from "./domain-inputs.mjs";
@@ -288,19 +288,19 @@ const hashSchema = { type: "string", pattern: "^[a-f0-9]{64}$" };
 const input = (properties, optional = []) => ({ type: "object", properties, required: Object.keys(properties).filter(k => !optional.includes(k)), additionalProperties: false });
 const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 export const contentToolDescriptors = [{ name: "aidesk_load_teaching_skill", title: "完整加载AI书桌服务器教学Skill包",
-        description: "进入教学前取得当前活动兼容的完整Skill包，必须读取清单全部文件后才按主SKILL.md工作；首次new/releaseId=null。metadataOnly只复核整包，不能冒充取得正文。continue/review须本人同run整包采用记录。缺失、失效、不兼容或不完整则停止进入教学。",
+        description: "教学前读完当前活动兼容Skill清单全文件，按SKILL.md工作。首读new/releaseId=null；metadataOnly仅复核非正文。continue/review须本人同run整包采用；缺失/失效/不兼容/不全则停止。",
         inputSchema: input({ ...scopeSchema, releaseId: { anyOf: [uuid, { type: "null" }] }, runId: uuid, purpose: { type: "string", enum: ["new", "continue", "review"] }, metadataOnly: { type: "boolean" } }), annotations: readAnnotations }, { name: "aidesk_read_content_catalog", title: "读取AI书桌版本化内容目录",
-        description: "在当前账号学习者权限内取有界共享内容目录；首次releaseId和cursor填null，续页固定返回的releaseId。目录不是教学绑定或实际采用。",
+        description: "本人当前学习者权限内取有界目录；首读releaseId/cursor=null，续页固定releaseId；不证明绑定或采用。",
         inputSchema: input({ ...scopeSchema, releaseId: { anyOf: [uuid, { type: "null" }] }, cursor: { anyOf: [resourceId, { type: "null" }] }, limit: { type: "integer", minimum: 1, maximum: 8 } }), annotations: readAnnotations },
     { name: "aidesk_read_content", title: "读取或核验AI书桌内容",
-        description: "按目录固定发布及资源读取。metadataOnly=true只复核当前权限/状态/摘要，不返回正文。new用于首次取得；continue/review须有本人原run采用记录。review只供历史复核，禁止重新采用失效内容。必要依赖须全部读完；每30秒及采用前复核。",
+        description: "按目录固定发布/资源读完必要依赖。metadataOnly=true核当前权限/状态/摘要，非正文。new首次；continue/review须本人原run采用。review仅历史复核，不重用失效内容；每30秒及采用前复核。",
         inputSchema: input({ ...scopeSchema, releaseId: uuid, resourceIds: { type: "array", items: resourceId, minItems: 1, maxItems: 4, uniqueItems: true }, purpose: { type: "string", enum: ["new", "continue", "review"] }, runId: uuid, metadataOnly: { type: "boolean" } }), annotations: readAnnotations },
     { name: "aidesk_record_content_adoption", title: "记录AI书桌合成内容采用依据",
-        description: "仅01架构合成验证：按稳定operationId记录当前账号run实际使用的准确版本、资源摘要与输出摘要；服务器重核权限及状态。回执证明记录存在，不能独自证明正确采用或学习效果。未知结果沿原号查询，不改号重试。",
+        description: "仅01合成验证：稳定operationId记录本人run实际采用的准确版本/资源及输出摘要；服务重核权限/状态。回执只证明记录，非正确采用/学习效果；未知沿原号查，禁换号重试。",
         inputSchema: input({ ...scopeSchema, operationId: uuid, runId: uuid, releaseId: uuid,
             resources: { type: "array", minItems: 1, maxItems: 4, items: input({ resourceId, revision: { type: "integer", minimum: 1 }, sha256: hashSchema }) },
             outputText: { type: "string", minLength: 1, maxLength: 2048, description: "实际合成输出，UTF-8不超过2048字节；服务计算摘要。" },
             teachingSkillSha256: { ...hashSchema, description: "使用完整教学Skill包时必填其返回摘要；服务核本run整包处理回执与全部文件，resources仅为实际引用子集。" } }, ["teachingSkillSha256"]), annotations: { ...readAnnotations, readOnlyHint: false } },
     { name: "aidesk_content_operation_status", title: "查询AI书桌本人内容采用回执",
-        description: "仅查询本人内容采用操作，重新检查当前账号与学习者记录权限；无记录不表示允许换新编号。不能读取他人记录或维护发布记录。",
+        description: "只查本人内容采用原号，重核当前账号/学习者记录权限；无记录不准换号；不读他人或维护发布记录。",
         inputSchema: input({ operationId: uuid }), annotations: readAnnotations }];

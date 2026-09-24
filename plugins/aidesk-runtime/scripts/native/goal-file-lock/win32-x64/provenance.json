@@ -1,0 +1,100 @@
+{
+  "contract": "aidesk-goal-file-lock-provenance-v1",
+  "artifact": {
+    "contract": "aidesk-goal-file-lock-artifact-v1",
+    "platform": "win32",
+    "arch": "x64",
+    "napiVersion": 8,
+    "nodeMinimum": 20,
+    "file": "goal-file-lock.node",
+    "sha256": "2a29cbc8d3fdd58af77ae1d9a782aa344af1d8562e9229efe9d594e414aa933d",
+    "sourceSha256": "2d9f93ce774af7fc99413fae514f35e6a38ada4b4424c1002fd9349674c3d3b1"
+  },
+  "source": "../../../goal-file-lock.c",
+  "builder": "tooling/build-goal-file-lock.mjs",
+  "builtAt": "2026-09-21T09:33:11.835Z",
+  "build": {
+    "node": "v20.20.2",
+    "compiler": "goal-file-lock.c\r\n   Creating library goal-file-lock.lib and object goal-file-lock.exp\r\ngoal-file-lock-windows-test.c\r\n\r\nDump of file D:\\a\\aidesk-src\\aidesk-src\\.cache\\goal-file-lock-prototype\\ci-native\\goal-file-lock.node\r\n\r\nFile Type: DLL\r\n\r\n  Image has the following dependencies:\r\n\r\n    node.exe\r\n    KERNEL32.dll\r\n    VCRUNTIME140.dll\r\n    api-ms-win-crt-math-l1-1-0.dll\r\n    api-ms-win-crt-runtime-l1-1-0.dll\r\n\r\n  Summary\r\n\r\n        1000 .data\r\n        1000 .pdata\r\n        1000 .rdata\r\n        1000 .reloc\r\n        2000 .text\r\nCompiler Passes:\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\cl.exe:        Version 19.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\c1.dll:        Version 19.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\c1xx.dll:      Version 19.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\c2.dll:        Version 19.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\c1xx.dll:      Version 19.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\link.exe:      Version 14.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\mspdb140.dll:  Version 14.51.36256.0\r\n C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\HostX64\\x64\\1033\\clui.dll: Version 19.51.36256.0",
+    "headers": [
+      {
+        "file": "node_api.h",
+        "sha256": "cf2446da4783a707dc9399321cff3ea28dce86fafdf38746fc47f1b293f5a040"
+      },
+      {
+        "file": "node_api_types.h",
+        "sha256": "8d5d854088d5725fec9775510e0aeeeb790a41ad083c49bb721d950b86e6bd61"
+      },
+      {
+        "file": "js_native_api.h",
+        "sha256": "89393f07881fcba3ed097a5989fba1746f1c2cf611f19ba4dcb17071da8a661e"
+      },
+      {
+        "file": "js_native_api_types.h",
+        "sha256": "0410c31e227f81e2981363c4d543f4832ac3df785343ec64cee621742ff8a034"
+      },
+      {
+        "file": "node_version.h",
+        "sha256": "469f42311cb60ecdfde9f44f56892a3b23e5564297692f61004dbc2433b1a00b"
+      }
+    ],
+    "downloads": [
+      {
+        "url": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-headers.tar.gz",
+        "sha256": "6de0e836efa9f32512e61db3dfd08b3d97a015b7e828d1a5efdf281a56a692d9",
+        "bytes": 8472492
+      },
+      {
+        "url": "https://nodejs.org/dist/v20.20.2/win-x64/node.lib",
+        "sha256": "c4a794e993d9304238523230885e9ec00ca052c73b9558471858eef14916d91f",
+        "bytes": 2589930
+      }
+    ],
+    "importedLibraries": [
+      "node.exe",
+      "KERNEL32.dll",
+      "VCRUNTIME140.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll"
+    ]
+  },
+  "ci": {
+    "sourceCommit": "eda7d06fc8b420a398be660f562d32b8932a1dba",
+    "runId": "35583868049",
+    "url": "https://github.com/aideskx/aidesk-src/actions/runs/35583868049",
+    "artifactId": 10630763965,
+    "archiveSha256": "23af0a30ef1d96a68d326c24357b7dd549badcb9732a36e61bfaa00f8fc0a5c3",
+    "rawProvenanceSha256": "372deb89b41f0550abd6b8b762f51ea320b5e37563c86e27ba4b09f2153b75f3"
+  },
+  "verification": {
+    "20": {
+      "passed": 12,
+      "failed": 0,
+      "sha256": "6b17fa8ab53d9ff0a0fa4dfd76e2a282f0a26edec3b38bb746454c6095e7410c"
+    },
+    "24": {
+      "passed": 12,
+      "failed": 0,
+      "sha256": "50ae16e121695f3ca538a8b7ba5aca65c208f83efdbdaef0178524ae11ddbd6d"
+    }
+  },
+  "hooks": {
+    "artifactId": 10630892872,
+    "archiveSha256": "cb3dab0b4c9803c69148111c0b2e068368964ab30eab9f8c7b83fc9bad7dbfd9",
+    "sameBinary": true,
+    "testsPerRuntime": 31,
+    "runtimes": [
+      "v20.20.2",
+      "v24.20.0"
+    ],
+    "sourceFilesVerified": 25
+  },
+  "previousPackagedArtifact": {
+    "binarySha256": "8b817b346397ff958c99f41c46d19948811a516ac40fd04ee63a460f2b60a06f",
+    "runId": "35579711973"
+  },
+  "limits": [
+    "Exact CI binary passed 12 native and 31 same-package Hook tests on each pinned Node runtime. Ordinary Codex Plugin host, authentication, installation and power-loss recovery remain unverified.",
+    "Availability of imported Windows runtime DLLs on ordinary hosts remains unverified."
+  ]
+}

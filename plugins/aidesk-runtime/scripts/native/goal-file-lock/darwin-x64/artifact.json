@@ -1,0 +1,10 @@
+{
+  "contract": "aidesk-goal-file-lock-artifact-v1",
+  "platform": "darwin",
+  "arch": "x64",
+  "napiVersion": 8,
+  "nodeMinimum": 20,
+  "file": "goal-file-lock.node",
+  "sha256": "946c7a38c8611003ccbb97d62fbbd0cea0d5e2e4a103aa0128afff86a7158fc2",
+  "sourceSha256": "2d9f93ce774af7fc99413fae514f35e6a38ada4b4424c1002fd9349674c3d3b1"
+}

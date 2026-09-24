@@ -7,7 +7,7 @@ import { constants } from 'node:fs';
 import { dirname, resolve, join, isAbsolute, delimiter, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { inspectInstallation, updatePlugin, runCli } from './update.mjs';
+import { inspectInstallation, updatePlugin, runCli, readMarketplaceSource } from './update.mjs';
 import { createPluginUpdateChecker } from './lib/release-check.mjs';
 import { validatePluginReleaseCandidate } from './lib/package-integrity.mjs';
 
@@ -73,6 +73,7 @@ export async function discoverCodex({ explicit, platform = process.platform, pat
 
 export async function checkEntryUpdate({ discover = discoverCodex, explicit, nodeVersion = process.versions.node,
   inventory = codex => runCli(codex, ['plugin', 'list', '--json'], 5000),
+  readSource = codex => readMarketplaceSource(codex, 5000),
   check = installed => createPluginUpdateChecker().check(installed),
   verify = async (version, release) => {
     // As in update.mjs, only the actual installed cache can vouch for its disk.
@@ -93,7 +94,8 @@ export async function checkEntryUpdate({ discover = discoverCodex, explicit, nod
     const value = await inventory(codex);
     const installed = inspectInstallation(value);
     if (installed.error) return { status: 'blocked', reason: installed.error, changed: false };
-    const result = await updatePlugin({ apply: false, inventory: async () => value, check, verify });
+    const result = await updatePlugin({ apply: false, inventory: async () => value,
+      readSource: () => readSource(codex), check, verify });
     return { ...result, host: { nodePath, codexPath: codex } };
   } catch { return { status: 'check_unavailable', changed: false }; }
 }

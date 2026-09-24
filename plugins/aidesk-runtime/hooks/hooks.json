@@ -1,107 +1,45 @@
 {
-  "description": "Original bounded 02 probe and authenticated 05 teaching observation; normal host Hook trust required.",
+  "description": "Personal goal request recovery and bounded legacy original-operation reads; no ordinary prompt or Stop capture. Normal host Hook trust required.",
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-source-hook.mjs\" --hook UserPromptSubmit",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook UserPromptSubmit",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-source-hook.mjs\" --hook Stop",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook Stop",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_(check_selection|load_teaching_skill|read_content_catalog|read_content|record_content_adoption|content_operation_status)$",
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-source-hook.mjs\" --hook PreToolUse",
+            "command": "node \"${PLUGIN_ROOT}/scripts/goal-plugin-hook.mjs\" --hook PreToolUse",
             "timeout": 3
           }
         ]
       },
       {
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_(entry_context|teaching_(session|operation|recover_request))$",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook PreToolUse",
             "timeout": 3
           }
-        ],
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_(account_status|entry_context|check_selection|teaching_[a-z_]+)$"
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_(account_status|check_selection|load_teaching_skill|read_content_catalog|read_content|record_content_adoption|content_operation_status)$",
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-source-hook.mjs\" --hook PostToolUse",
+            "command": "node \"${PLUGIN_ROOT}/scripts/goal-plugin-hook.mjs\" --hook PostToolUse",
             "timeout": 3
           }
         ]
       },
       {
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_(entry_context|teaching_(session|operation|recover_request))$",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook PostToolUse",
-            "timeout": 3
-          }
-        ],
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_(account_status|entry_context|check_selection|teaching_[a-z_]+)$"
-      }
-    ],
-    "Interrupt": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook Interrupt",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/teaching-plugin-hook.mjs\" --hook SessionEnd",
             "timeout": 3
           }
         ]

@@ -1,4 +1,4 @@
-// Generated from services/authority-api/src/domain-inputs.ts; source SHA-256 b63fe4934716266c4b1cc1e4a0d5037ff16ad51187fc050b404d27b627c69359.
+// Generated from services/authority-api/src/domain-inputs.ts; source SHA-256 4606a9e91be67f2de3d8b2e95584dfa32540fe6d2c9d472f425fde0ead43a08c.
 // Run node tooling/build-plugin-runtime.mjs; do not edit this copy.
 export const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/u;
 export const isUuid = (value) => typeof value === "string" && uuidPattern.test(value);
@@ -7,6 +7,7 @@ export const isTextId = (value) => typeof value === "string" && value.trim().len
     && !Array.from(value).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
 export const isName = (value) => isTextId(value) && Array.from(value).length <= 128;
 export const isVersion = (value) => Number.isSafeInteger(value) && Number(value) > 0;
+export const isProfilePurpose = (value) => value === "child" || value === "adult" || value === "unknown";
 export const isRole = (value) => value === "adult" || value === "guardian";
 export const isLearnerIds = (value) => Array.isArray(value) && value.length <= 100
     && value.every(isTextId) && new Set(value).size === value.length;
@@ -23,9 +24,10 @@ export function isTimestamp(value) {
         && hour <= 23 && minute <= 59 && second <= 59 && (!match[7] || Number(match[8]) <= 23 && Number(match[9]) <= 59);
 }
 const fieldChecks = {
+    contract: value => value === "aidesk-teaching-business-v2",
     operationId: isUuid, attemptId: isUuid, familyId: isTextId, name: isName, requestId: isUuid, memberId: isUuid,
     role: isRole, canManage: value => typeof value === "boolean", learnerIds: isLearnerIds, expectedVersion: isVersion,
-    decision: value => value === "approve" || value === "reject", learnerId: isTextId,
+    decision: value => value === "approve" || value === "reject", learnerId: isTextId, profilePurpose: isProfilePurpose,
     action: value => typeof value === "string" && ["issue", "suspend", "resume", "renew"].includes(value),
     entitlementId: value => value === null || isTextId(value), expiresAt: value => value === null || isTimestamp(value),
 };
