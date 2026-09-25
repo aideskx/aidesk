@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260924100459",
+  "latestVersion": "0.3.2+codex.20260924183310",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "df0302033123618ddfeb68a6c09d342766a7bf48fdc46a7348437d911336f5a8",
-  "publishedAt": "2026-09-24T11:01:11Z",
-  "notes": "固定开发候选100459：本人最近目标与必要进展摘要、原任务及成果入口，沿原账号和目标数据合同。46件已装包原样交付，配套开发服务125及SQL240006；旧目录兼容、配置保持和已有合成资料只读通过，分页接续仍在验收。举报导出关闭；普通首登、双机、公开安装和稳定分发未验，正式商业关闭。"
+  "packageDigest": "cfac65d8d811f71b4310834eae0ebdaf86f2ea8ce411ffcbb18be8f916b6a00b",
+  "publishedAt": "2026-09-25T01:26:17Z",
+  "notes": "固定验收候选183310：原正式平台年度权益回执消费者精确兼容，46件已装包原样保留。配套开发服务128及SQL250002；真实单笔499元支付、发权、技术受理及原单全退已闭环，退款后新请求拒绝、旧回执保留。普通首登、同候选双机、公开安装和稳定更新待验；只拟固定测试分支，未提升稳定源或开放新单。"
 }

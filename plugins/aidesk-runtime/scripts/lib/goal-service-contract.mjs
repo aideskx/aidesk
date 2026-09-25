@@ -1,4 +1,4 @@
-// Generated from services/authority-api/src/goal-service-contract.ts; source SHA-256 ab52520bb8e15434cd93827bdd1fda9d478c685a034676cf54db75aacf819a14.
+// Generated from services/authority-api/src/goal-service-contract.ts; source SHA-256 17b35a592c025005d95b2cc1c37a022f39809def1a67552bb865236a1e503074.
 // Run node tooling/build-plugin-runtime.mjs; do not edit this copy.
 import { isTimestamp, isUuid } from "./domain-inputs.mjs";
 import { canonicalTeachingJson, parseTeachingJson, teachingObject, teachingRequestSha256 } from "./teaching-business-contract.mjs";
@@ -73,8 +73,10 @@ function receipt(v, contract, operationId, digest) {
     }
     else {
         if (!exact(a, ["contract", "scope", "basis", "policyId", "state", "checkedAt", "effectiveAt", "expiresAt"])
-            || a.contract !== "aidesk-platform-subscription-local-v1" || a.scope !== "synthetic-only"
-            || a.basis !== "platform_annual_local" || a.policyId !== "platform-subscription-local-v1" || a.state !== "active"
+            || !((a.contract === "aidesk-platform-subscription-local-v1" && a.scope === "synthetic-only"
+                && a.basis === "platform_annual_local" && a.policyId === "platform-subscription-local-v1")
+                || (a.contract === "aidesk-platform-subscription-v1" && a.scope === "platform"
+                    && a.basis === "platform_annual" && a.policyId === "platform-annual-20260924-v1")) || a.state !== "active"
             || v.acceptedAt !== a.checkedAt)
             return false;
         const checked = micros(a.checkedAt), effective = micros(a.effectiveAt), expires = micros(a.expiresAt);
