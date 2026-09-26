@@ -8,10 +8,10 @@ import { TextDecoder } from 'node:util';
 import { isUuid, isTimestamp } from './lib/domain-inputs.mjs';
 import { canonicalTeachingJson, parseTeachingJson, teachingRequestSha256 } from './lib/teaching-business-contract.mjs';
 import { readGoalMcpToolResult, splitGoalMcpRequest, validGoalAccountSubject, withExpectedGoalAccount } from './lib/goal-mcp-transport.mjs';
-import { assembleGoalExport, GOAL_DATA_EXPORT_LIMITS } from './lib/goal-data-export-contract.mjs';
+import { assembleGoalExport, assembleGoalRelationshipExport, assembleGoalCommentExport, assembleGoalNotificationExport, assembleGoalReportExport, isErasedGoalReportExport, GOAL_COMMUNITY_REPORT_EXPORT_CONTRACT, parseGoalDataExportInput, GOAL_COMMUNITY_NOTIFICATION_EXPORT_CONTRACT, GOAL_COMMUNITY_COMMENT_EXPORT_CONTRACT, GOAL_COMMUNITY_RELATIONSHIP_EXPORT_CONTRACT, GOAL_DATA_EXPORT_V5_CONTRACT, GOAL_DATA_EXPORT_LIMITS } from './lib/goal-data-export-contract.mjs';
 import { parseGoalNetworkInput, validGoalNetworkResult } from './lib/goal-network-contract.mjs';
 import { assembleGoalNetworkReportExport, GOAL_NETWORK_REPORT_EXPORT_LIMITS, validGoalNetworkReportResult } from './lib/goal-network-report-contract.mjs';
-import { withGoalStore, loadGoalOperation, ownGoalIndex, readGoalJson, goalTool, validGoalNetworkReadObservation, goalOperationTombstone, networkOperationTombstone, goalDeletionState, GOAL_PLUGIN_FORMAT, goalHash, needGoal, GoalPluginError } from './goal-plugin-request.mjs';
+import { withGoalStore, loadGoalOperation, ownGoalIndex, readGoalJson, goalTool, validGoalNetworkReadObservation, goalOperationTombstone, networkOperationTombstone, goalDeletionState, networkDeletionState, interactionOperationErasure, communityReportOperationErasure, notificationOperationErasure, commentOperationErasure, commentGoalDeletionState, localNetworkTarget, sameGoalValue, GOAL_PLUGIN_FORMAT, goalHash, needGoal, GoalPluginError } from './goal-plugin-request.mjs';
 
 import { NETWORK_DELETION_DIRECTORIES, validateLocalNetworkDeletionMetadata, validLocalDeletionPlan } from './goal-data-delete.mjs';
 
@@ -42,7 +42,7 @@ function safeCode(error) { return error instanceof GoalPluginError ? error.code 
 // Shared byte-for-byte original copying. Consumers determine their exact scope
 // and validate any stable receipt before this bounded traversal.
 function copyOriginalFiles({ store, row, subject, include, warn, scan,
-  receiptContracts = ['aidesk-goal-task-v1', 'aidesk-goal-network-v1'] }) {
+  receiptContracts = ['aidesk-goal-task-v1', 'aidesk-goal-network-v1', 'aidesk-goal-finalization-v1', 'aidesk-goal-community-v1', 'aidesk-goal-community-interaction-v1', 'aidesk-goal-community-comment-v1', 'aidesk-goal-community-notification-v1', 'aidesk-goal-community-report-v1'] }) {
   const id = row.entry.input.operationId;
   include(join(store.indices, `${id}.json`), `local/${id}/owner.json`, id);
   const stable = new Set(['request.json', 'status.json', 'receipt.json']);
@@ -81,15 +81,34 @@ function copyOriginalFiles({ store, row, subject, include, warn, scan,
 }
 /** Input pages are exact {input, response} pairs from the authenticated MCP,
  * not a hand-written operation list. The returned metadata is body-free. */
-export async function exportGoalData({ subject, goalId, dataRoot, output, pages }) {
-  needGoal(validGoalAccountSubject(subject) && isUuid(goalId) && goalId === goalId.toLowerCase(), 'EXPORT_SELECTOR_INVALID');
+export const exportGoalData = options => exportScopedData({ ...options, target: undefined, kind: 'goal' });
+export const exportGoalRelationships = options => exportScopedData({ ...options, goalId: undefined, kind: 'relationships' });
+export const exportGoalComments = options => exportScopedData({ ...options, goalId: undefined, kind: 'comments' });
+export const exportGoalCommunityReport = options => exportScopedData({ ...options, goalId: undefined, kind: 'communityReport' });
+export const exportGoalNotifications = options => exportScopedData({ ...options, goalId: undefined, kind: 'notifications' });
+async function exportScopedData({ subject, goalId, target, dataRoot, output, pages, kind }) {
+  const communityReport = kind === 'communityReport', relationships = kind === 'relationships', comments = kind === 'comments', notifications = kind === 'notifications', networkScope = communityReport || relationships || comments || notifications;
+  const scopeContract = communityReport ? GOAL_COMMUNITY_REPORT_EXPORT_CONTRACT : notifications ? GOAL_COMMUNITY_NOTIFICATION_EXPORT_CONTRACT : comments ? GOAL_COMMUNITY_COMMENT_EXPORT_CONTRACT : GOAL_COMMUNITY_RELATIONSHIP_EXPORT_CONTRACT;
+  needGoal(validGoalAccountSubject(subject) && (networkScope || isUuid(goalId) && goalId === goalId.toLowerCase()), 'EXPORT_SELECTOR_INVALID');
+  if (networkScope) parseGoalDataExportInput('read', { contract: scopeContract,
+    target, snapshot: null, offset: 0, chunkBytes: 8192 });
+  const selector = networkScope ? { target } : { goalId };
   needGoal(Array.isArray(pages) && pages.length > 0 && pages.length <= 4096, 'EXPORT_PAGES_INVALID');
   const checked = pages.map(page => {
     needGoal(page && Object.keys(page).length === 2 && page.input && page.response, 'EXPORT_PAGES_INVALID');
     const { businessResult } = readGoalMcpToolResult(page.response, subject);
-    needGoal(page.input.goalId === goalId, 'EXPORT_SELECTOR_MISMATCH'); return { input: page.input, result: businessResult };
+    needGoal(networkScope ? page.input.contract === scopeContract && sameGoalValue(page.input.target, target) : page.input.goalId === goalId, 'EXPORT_SELECTOR_MISMATCH'); return { input: page.input, result: businessResult };
   });
-  const assembled = assembleGoalExport(checked);
+  const assembled = communityReport ? assembleGoalReportExport(checked) : notifications ? assembleGoalNotificationExport(checked) : comments ? assembleGoalCommentExport(checked) : relationships ? assembleGoalRelationshipExport(checked) : assembleGoalExport(checked);
+  const erasedReport = communityReport && isErasedGoalReportExport(assembled.document);
+  const boundPublicId = !networkScope && assembled.document.contract === GOAL_DATA_EXPORT_V5_CONTRACT
+    ? assembled.document.records.find(r => r.kind === 'community_binding')?.data.public_id : null;
+  const owns = input => networkScope ? sameGoalValue(localNetworkTarget(input), target) : ownGoal(input, goalId)
+    || !!boundPublicId && input?.contract === 'aidesk-goal-community-comment-v1' && input.source?.publicId === boundPublicId;
+  const serviceErasedComments = new Set(assembled.document.records.filter(r => r.kind === 'community_comment_operation' && r.data.erased_at !== null).map(r => r.data.operation_id));
+  const serviceErasedCommentTargets = new Set(assembled.document.records
+    .filter(r => ['community_comment', 'community_comment_operation'].includes(r.kind) && r.data.erased_at !== null)
+    .map(r => canonicalTeachingJson({ kind: 'community_comment', publicId: r.data.public_id, commentId: r.data.comment_id })));
   needGoal((dataRoot === undefined || dataRoot === null || typeof dataRoot === 'string' && isAbsolute(dataRoot)) && typeof output === 'string' && isAbsolute(output), 'EXPORT_PATH_REQUIRED');
   dataRoot = dataRoot == null ? null : resolve(dataRoot); output = resolve(output);
   // Existing ancestors only; a new leaf prevents overwrite, following links
@@ -108,11 +127,110 @@ export async function exportGoalData({ subject, goalId, dataRoot, output, pages 
     needGoal(payload.length < MAX_LOCAL_FILES, 'EXPORT_LOCAL_LIMIT'); const bytes = bytesAt(source); totalBytes += bytes.length;
     needGoal(totalBytes <= MAX_LOCAL_BYTES, 'EXPORT_LOCAL_LIMIT'); payload.push({ target, bytes }); files.push({ path: target, bytes: bytes.length, sha256: goalHash(bytes), operationId });
   };
-  const expected = new Map(assembled.document.records.filter(r => r.localOperation).map(r => [r.localOperation.operationId, r.localOperation]));
+  const expected = new Map(), collisions = new Set();
+  for (const record of assembled.document.records) if (record.localOperation) {
+    const original = record.localOperation;
+    // Remote RPC owners use (tool, operationId), while this installed helper's
+    // historical thin index has a single operationId namespace. Keep the full
+    // service document; never overwrite or guess which local original is which.
+    if (expected.has(original.operationId)) { collisions.add(original.operationId); warn('LOCAL_OPERATION_ID_COLLISION', original.operationId); }
+    expected.set(original.operationId, original);
+  }
   if (dataRoot === null) { warn('LOCAL_ROOT_NOT_PROVIDED'); for (const [id] of expected) operations.push({ operationId: id, status: 'not_inspected' }); return finishExport(); }
   return withGoalStore({ dataRoot, subject }, store => {
       if (!store) { warn('LOCAL_NAMESPACE_NOT_FOUND'); for (const [id] of expected) operations.push({ operationId: id, status: 'missing' }); return finishExport(); }
-      needGoal(!goalDeletionState(store, goalId), 'GOAL_DELETE_PENDING_OR_DELETED');
+      if (erasedReport) {
+        // A newly read scrubbed case is still exportable. Never inventory or
+        // copy its old reason/request/receipt, even if cleanup is incomplete.
+        let claim = null;
+        try {
+          const indexed = readGoalJson(join(store.indices, `${target.reportId}.json`), null);
+          if (indexed?.subject === subject) {
+            claim = ownGoalIndex(store, target.reportId);
+            const original = assembled.document.records.find(r => r.kind === 'community_report_operation');
+            if (claim.tool !== 'aidesk_goal_community_report_submit' || claim.requestSha256 !== original?.data.request_sha256)
+              warn('ORIGINAL_SERVICE_MISMATCH', target.reportId);
+          }
+          {
+            for (const path of [join(store.pending, target.reportId), join(store.staging, target.reportId), join(store.completed, target.reportId.slice(0, 2), target.reportId)]) {
+              try { directory(path); warn(claim?.tool === 'aidesk_goal_community_report_submit' ? 'REPORT_ERASED_LOCAL_ORIGINAL_REQUIRES_CLEANUP' : 'UNATTRIBUTED_LOCAL_ITEM', target.reportId); }
+              catch (error) { if (error.code !== 'ENOENT') warn(safeCode(error), target.reportId); }
+            }
+          }
+        } catch (error) { warn(safeCode(error), target.reportId); }
+        operations.push({ operationId: target.reportId, status: 'erased_service_only' });
+        return finishExport();
+      }
+      needGoal(!(networkScope ? networkDeletionState(store, target) : goalDeletionState(store, goalId)), 'GOAL_DELETE_PENDING_OR_DELETED');
+      // An observed erased original invalidates a previously captured snapshot
+      // even before exact-target cleanup has a receipt. Check thin own markers
+      // under the same lock, outside warning-only inventory handling, before
+      // copying any bytes or creating output. Never treat this as unlink authority.
+      const erasedPath = join(store.path, 'interaction-erased-operations');
+      let erasedNames = [];
+      try { erasedNames = readdirSync(directory(erasedPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      needGoal(erasedNames.length <= MAX_LOCAL_FILES, 'EXPORT_LOCAL_LIMIT');
+      for (const name of erasedNames) {
+        needGoal(/^[a-f0-9-]{36}\.json$/u.test(name) && isUuid(name.slice(0, -5)), 'ERASURE_MARKER_INVALID');
+        const id = name.slice(0, -5), erased = interactionOperationErasure(store, id);
+        needGoal(erased, 'ERASURE_MARKER_INVALID');
+        const sameScope = networkScope ? sameGoalValue(erased.target, target)
+          : erased.target.kind === 'goal' && erased.target.goalId === goalId;
+        const original = expected.get(id);
+        needGoal(!sameScope && !(original?.tool === `aidesk_goal_community_interaction_${erased.action}`
+          && original.requestSha256 === erased.requestSha256), 'INTERACTION_ORIGINAL_ERASED');
+      }
+      const reportErasedPath = join(store.path, 'community-report-erased-operations');
+      let reportErasedNames = [];
+      try { reportErasedNames = readdirSync(directory(reportErasedPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      needGoal(reportErasedNames.length <= MAX_LOCAL_FILES, 'EXPORT_LOCAL_LIMIT');
+      for (const name of reportErasedNames) {
+        needGoal(/^[a-f0-9-]{36}\.json$/u.test(name) && isUuid(name.slice(0, -5)), 'ERASURE_MARKER_INVALID');
+        const id = name.slice(0, -5), erased = communityReportOperationErasure(store, id);
+        needGoal(erased, 'ERASURE_MARKER_INVALID');
+        const original = expected.get(id);
+        needGoal(!(communityReport && sameGoalValue(erased.target, target))
+          && !(original?.tool === 'aidesk_goal_community_report_submit' && original.requestSha256 === erased.requestSha256), 'COMMUNITY_REPORT_ORIGINAL_ERASED');
+      }
+      const notificationErasedPath = join(store.path, 'notification-erased-operations');
+      let notificationErasedNames = [];
+      try { notificationErasedNames = readdirSync(directory(notificationErasedPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      needGoal(notificationErasedNames.length <= MAX_LOCAL_FILES, 'EXPORT_LOCAL_LIMIT');
+      for (const name of notificationErasedNames) {
+        needGoal(/^[a-f0-9-]{36}\.json$/u.test(name) && isUuid(name.slice(0, -5)), 'ERASURE_MARKER_INVALID');
+        const id = name.slice(0, -5), erased = notificationOperationErasure(store, id);
+        needGoal(erased, 'ERASURE_MARKER_INVALID');
+        const original = expected.get(id);
+        needGoal(!(notifications && sameGoalValue(erased.target, target))
+          && !(original?.tool === `aidesk_goal_community_notification_${erased.action}` && original.requestSha256 === erased.requestSha256),
+        'NOTIFICATION_ORIGINAL_ERASED');
+      }
+      const commentErasedPath = join(store.path, 'comment-erased-operations');
+      let commentErasedNames = [];
+      try { commentErasedNames = readdirSync(directory(commentErasedPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      needGoal(commentErasedNames.length <= MAX_LOCAL_FILES, 'EXPORT_LOCAL_LIMIT');
+      for (const name of commentErasedNames) {
+        needGoal(/^[a-f0-9-]{36}\.json$/u.test(name) && isUuid(name.slice(0, -5)), 'ERASURE_MARKER_INVALID');
+        const id = name.slice(0, -5), erased = commentOperationErasure(store, id);
+        needGoal(erased, 'ERASURE_MARKER_INVALID');
+        const staleComment = assembled.document.records.some(record =>
+          record.localOperation?.tool === 'aidesk_goal_community_comment_create' && record.localOperation.operationId === id
+            && record.localOperation.requestSha256 === erased.requestSha256
+          || ['community_comment', 'community_comment_operation'].includes(record.kind) && record.data.erased_at === null
+            && record.data.public_id === erased.target.publicId && record.data.comment_id === erased.target.commentId);
+        // RPCs have separate operation namespaces. Another tool's identical
+        // UUID is neither this erased comment nor a stale comment original.
+        needGoal(!(comments && sameGoalValue(erased.target, target)) && !staleComment, 'COMMENT_ORIGINAL_ERASED');
+      }
+      // A complete goal export may contain erased thin rows. It may not use a
+      // stale live service snapshot to resurrect a locally confirmed deletion.
+      for (const record of assembled.document.records) {
+        if (!['community_comment', 'community_comment_operation'].includes(record.kind) || record.data.erased_at !== null) continue;
+        const itemTarget = { kind: 'community_comment', publicId: record.data.public_id, commentId: record.data.comment_id };
+        needGoal(!networkDeletionState(store, itemTarget), 'COMMENT_DELETE_PENDING_OR_DELETED');
+        if (record.localOperation) needGoal(!networkOperationTombstone(store, record.localOperation.operationId)
+          && !goalOperationTombstone(store, record.localOperation.operationId), 'COMMENT_ORIGINAL_ERASED');
+      }
       try {
       const discovered = new Set();
       for (const name of readdirSync(store.path)) if (!['pending', 'staging', 'completed', '.lock', 'delete-intents', 'goal-tombstones', 'deleted-operations', 'delete-plans', 'delete-cancellations', ...NETWORK_DELETION_DIRECTORIES].includes(name)) warn('UNATTRIBUTED_LOCAL_ITEM');
@@ -130,10 +248,30 @@ export async function exportGoalData({ subject, goalId, dataRoot, output, pages 
       }
       idsAt(store.pending); idsAt(store.staging); idsAt(store.completed, true);
       for (const id of new Set([...expected.keys(), ...discovered])) {
+        if (collisions.has(id)) { operations.push({ operationId: id, status: 'ambiguous' }); continue; }
         const op = expected.get(id); let row;
         try {
           row = loadGoalOperation(store, id);
-          if (!ownGoal(row.entry.input, goalId)) { if (op) warn('ORIGINAL_GOAL_MISMATCH', id); continue; }
+          if (!owns(row.entry.input)) { if (op) warn('ORIGINAL_GOAL_MISMATCH', id); continue; }
+          if (row.entry.input.contract === 'aidesk-goal-community-report-v1'
+            && (communityReportOperationErasure(store, id) || networkOperationTombstone(store, id)
+              || networkDeletionState(store, localNetworkTarget(row.entry.input)))) {
+            warn('REPORT_ERASED_LOCAL_ORIGINAL_REQUIRES_CLEANUP', id);
+            operations.push({ operationId: id, status: 'erased_local_copy_omitted' }); continue;
+          }
+          if (row.entry.input.contract === 'aidesk-goal-community-notification-v1'
+            && (notificationOperationErasure(store, id) || networkOperationTombstone(store, id)
+              || networkDeletionState(store, localNetworkTarget(row.entry.input)))) {
+            warn('NOTIFICATION_ERASED_LOCAL_ORIGINAL_REQUIRES_CLEANUP', id);
+            operations.push({ operationId: id, status: 'erased_local_copy_omitted' }); continue;
+          }
+          if (row.entry.input.contract === 'aidesk-goal-community-comment-v1'
+            && (serviceErasedComments.has(id) || serviceErasedCommentTargets.has(canonicalTeachingJson(localNetworkTarget(row.entry.input)))
+              || commentOperationErasure(store, id) || networkOperationTombstone(store, id)
+              || goalOperationTombstone(store, id) || networkDeletionState(store, localNetworkTarget(row.entry.input)) || commentGoalDeletionState(store, row.entry.input))) {
+            warn('COMMENT_ERASED_LOCAL_ORIGINAL_REQUIRES_CLEANUP', id);
+            operations.push({ operationId: id, status: 'erased_local_copy_omitted' }); continue;
+          }
           if (!op) warn('LOCAL_OPERATION_NOT_IN_SERVICE_SNAPSHOT', id);
           else needGoal(row.entry.tool === op.tool && row.entry.requestSha256 === op.requestSha256, 'ORIGINAL_SERVICE_MISMATCH');
           const state = row.state.status;
@@ -141,9 +279,25 @@ export async function exportGoalData({ subject, goalId, dataRoot, output, pages 
           if (state !== 'completed') warn('LOCAL_OUTCOME_NOT_CONFIRMED', id);
           // Stable receipt bytes must match the completed marker; hash alone
           // does not claim they are a remote backup or current grant.
-          if (state === 'completed' && ['aidesk-goal-task-v1', 'aidesk-goal-network-v1'].includes(row.entry.input.contract)) {
+          if (state === 'completed' && ['aidesk-goal-task-v1', 'aidesk-goal-network-v1', 'aidesk-goal-finalization-v1', 'aidesk-goal-community-v1', 'aidesk-goal-community-interaction-v1', 'aidesk-goal-community-comment-v1', 'aidesk-goal-community-notification-v1', 'aidesk-goal-community-report-v1'].includes(row.entry.input.contract)) {
             const receipt = parseTeachingJson(bytesAt(join(row.path, 'receipt.json')).toString('utf8'), 32768);
-            if (row.entry.input.contract === 'aidesk-goal-task-v1') { const tool = goalTool(row.entry.tool); needGoal(tool.valid(tool.action, receipt, row.entry.input), 'RECEIPT_INVALID'); }
+            if (['aidesk-goal-task-v1', 'aidesk-goal-finalization-v1', 'aidesk-goal-community-notification-v1', 'aidesk-goal-community-report-v1'].includes(row.entry.input.contract)) { const tool = goalTool(row.entry.tool); needGoal(tool.valid(tool.action, receipt, row.entry.input), 'RECEIPT_INVALID'); }
+            if (row.entry.input.contract === 'aidesk-goal-community-notification-v1'
+            && (notificationOperationErasure(store, id) || networkOperationTombstone(store, id)
+              || networkDeletionState(store, localNetworkTarget(row.entry.input)))) {
+            warn('NOTIFICATION_ERASED_LOCAL_ORIGINAL_REQUIRES_CLEANUP', id);
+            operations.push({ operationId: id, status: 'erased_local_copy_omitted' }); continue;
+          }
+          if (row.entry.input.contract === 'aidesk-goal-community-comment-v1') needGoal(goalTool(row.entry.tool).valid('cancel', receipt, row.entry.input), 'RECEIPT_INVALID');
+            if (['aidesk-goal-community-v1', 'aidesk-goal-community-interaction-v1'].includes(row.entry.input.contract)) {
+              const tool = goalTool(row.entry.tool);
+              needGoal(tool.valid(tool.action, { contract: row.entry.input.contract, status: 'recorded', receipt }, row.entry.input), 'RECEIPT_INVALID');
+            }
+            if (op && ['aidesk-goal-community-notification-v1', 'aidesk-goal-community-report-v1'].includes(row.entry.input.contract)) {
+              const serviceRecord = assembled.document.records.find(record => record.localOperation?.tool === row.entry.tool
+                && record.localOperation.operationId === id && record.localOperation.requestSha256 === row.entry.requestSha256);
+              needGoal(serviceRecord && sameGoalValue(receipt, serviceRecord.data.receipt), 'ORIGINAL_SERVICE_MISMATCH');
+            }
             const comparable = row.entry.tool === 'aidesk_goal_task_reserve' ? { ...receipt, creationDisposition: 'reconcile_only' } : receipt;
             needGoal(goalHash(canonicalTeachingJson(comparable)) === row.state.receiptSha256, 'RECEIPT_HASH_MISMATCH');
           }
@@ -187,12 +341,12 @@ export async function exportGoalData({ subject, goalId, dataRoot, output, pages 
     for (const part of parts.slice(0, -1)) { parent = join(parent, part); try { mkdirSync(parent, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; directory(parent); } }
     put(join(output, item.target), item.bytes);
   }
-  const manifest = { format: 'aidesk-goal-local-export-v1', subject, goalId, snapshot: assembled.snapshot,
+  const manifest = { format: communityReport ? 'aidesk-goal-community-report-local-export-v1' : notifications ? 'aidesk-goal-notification-local-export-v1' : comments ? 'aidesk-goal-comment-local-export-v1' : relationships ? 'aidesk-goal-relationship-local-export-v1' : 'aidesk-goal-local-export-v1', subject, ...selector, snapshot: assembled.snapshot,
     service: { path: 'service.json', bytes: assembled.bytes.length, sha256: goalHash(assembled.bytes), scopeComplete: true },
-    local: { scope: 'this_subject_goal_plugin_v1_only', complete: warnings.length === 0, operations, files, warnings },
+    local: { scope: communityReport ? 'this_subject_exact_community_report' : notifications ? 'this_subject_exact_notification_scope' : comments ? 'this_subject_community_comment' : relationships ? 'this_subject_community_relationship_generation' : 'this_subject_goal_plugin_v1_only', complete: warnings.length === 0, operations, files, warnings },
     exclusions: assembled.document.exclusions, originalDataUnchanged: true, atomicAcrossServiceAndLocal: false, deletionPerformed: false };
   put(join(output, 'manifest.json'), Buffer.from(canonicalTeachingJson(manifest) + '\n'));
-  return { output, goalId, snapshot: assembled.snapshot, localComplete: warnings.length === 0, warningCount: warnings.length,
+  return { output, ...selector, snapshot: assembled.snapshot, localComplete: warnings.length === 0, warningCount: warnings.length,
     fileCount: payload.length + 2, manifestSha256: goalHash(bytesAt(join(output, 'manifest.json'), MAX_LOCAL_BYTES)) };
   }
 }
@@ -375,16 +529,20 @@ export async function exportGoalNetworkData(options) {
 }
 async function main() {
   const [command, ...args] = process.argv.slice(2), options = {};
-  const network = command === 'export-network', reports = command === 'export-reports';
-  needGoal(network ? args.length === 4 : reports ? [4, 6].includes(args.length) : command === 'export' && [6, 8].includes(args.length), 'EXPORT_USAGE');
-  const allowed = network ? ['--subject', '--output'] : reports ? ['--subject', '--data-root', '--output'] : ['--subject', '--goal-id', '--data-root', '--output'];
+  const communityReport = command === 'export-community-report', network = command === 'export-network', reports = command === 'export-reports', relationships = command === 'export-relationships', comments = command === 'export-comments', notifications = command === 'export-notification', settings = command === 'export-notification-settings';
+  needGoal(communityReport || notifications || settings ? [6, 8].includes(args.length) : relationships || comments ? [8, 10].includes(args.length) : network ? args.length === 4 : reports ? [4, 6].includes(args.length) : command === 'export' && [6, 8].includes(args.length), 'EXPORT_USAGE');
+  const allowed = communityReport ? ['--subject', '--report-id', '--data-root', '--output'] : notifications ? ['--subject', '--notification-id', '--data-root', '--output'] : settings ? ['--subject', '--generation', '--data-root', '--output'] : comments ? ['--subject', '--public-id', '--comment-id', '--data-root', '--output'] : relationships ? ['--subject', '--public-id', '--generation', '--data-root', '--output'] : network ? ['--subject', '--output'] : reports ? ['--subject', '--data-root', '--output'] : ['--subject', '--goal-id', '--data-root', '--output'];
   for (let i = 0; i < args.length; i += 2) { const key = args[i]; needGoal(allowed.includes(key) && !Object.hasOwn(options, key), 'EXPORT_USAGE'); options[key] = args[i + 1]; }
-  needGoal((network || reports ? ['--subject', '--output'] : ['--subject', '--goal-id', '--output']).every(k => Object.hasOwn(options, k)), 'EXPORT_USAGE');
+  needGoal((communityReport ? ['--subject', '--report-id', '--output'] : notifications ? ['--subject', '--notification-id', '--output'] : settings ? ['--subject', '--generation', '--output'] : comments ? ['--subject', '--public-id', '--comment-id', '--output'] : relationships ? ['--subject', '--public-id', '--generation', '--output'] : network || reports ? ['--subject', '--output'] : ['--subject', '--goal-id', '--output']).every(k => Object.hasOwn(options, k)), 'EXPORT_USAGE');
   const inputLimit = (reports ? GOAL_NETWORK_REPORT_EXPORT_LIMITS : GOAL_DATA_EXPORT_LIMITS).documentBytes * 4;
   const chunks = []; let size = 0;
   for await (const bytes of process.stdin) { size += bytes.length; needGoal(size <= inputLimit, 'EXPORT_INPUT_LIMIT'); chunks.push(bytes); }
   const input = parseTeachingJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)), inputLimit);
-  const result = reports ? await exportGoalNetworkReports({ subject: options['--subject'], dataRoot: options['--data-root'], output: options['--output'], pages: input })
+  const result = communityReport ? await exportGoalCommunityReport({ subject: options['--subject'], target: { kind: 'community_report', reportId: options['--report-id'] }, dataRoot: options['--data-root'], output: options['--output'], pages: input })
+    : notifications || settings ? await exportGoalNotifications({ subject: options['--subject'], target: notifications ? { kind: 'community_notification', notificationId: options['--notification-id'] } : { kind: 'community_notification_settings', generation: /^[1-9][0-9]*$/u.test(options['--generation']) ? Number(options['--generation']) : null }, dataRoot: options['--data-root'], output: options['--output'], pages: input })
+    : comments ? await exportGoalComments({ subject: options['--subject'], target: { kind: 'community_comment', publicId: options['--public-id'], commentId: options['--comment-id'] }, dataRoot: options['--data-root'], output: options['--output'], pages: input })
+    : relationships ? await exportGoalRelationships({ subject: options['--subject'], target: { kind: 'community_relationships', publicId: options['--public-id'], generation: Number(options['--generation']) }, dataRoot: options['--data-root'], output: options['--output'], pages: input })
+    : reports ? await exportGoalNetworkReports({ subject: options['--subject'], dataRoot: options['--data-root'], output: options['--output'], pages: input })
     : network ? await exportGoalNetworkData({ subject: options['--subject'], output: options['--output'], selections: input })
     : await exportGoalData({ subject: options['--subject'], goalId: options['--goal-id'], dataRoot: options['--data-root'], output: options['--output'], pages: input });
   console.log(JSON.stringify(result));

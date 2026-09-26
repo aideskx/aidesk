@@ -3,7 +3,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|share_preference_(read|update|operation)|community_(publish|close|reopen|state|discover|read|operation)|community_interaction_(adopt|adoptions|relation_set|state|bookmarks|operation)|community_comment_(create|cancel|read|thread|own|operation)|community_notification_(list|read|preferences|mark_read|mute_set|proactive_set|operation)|community_report_(submit|list|status|operation)|finalization_(finalize|read|operation)|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
         "hooks": [
           {
             "type": "command",
@@ -25,7 +25,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
+        "matcher": "^mcp__aidesk[_-]authority__aidesk_goal_(data_export|data_delete(_preview|_operation|_cancel)?|network_delete(_preview|_operation|_cancel)?|share_preference_(read|update|operation)|community_(publish|close|reopen|state|discover|read|operation)|community_interaction_(adopt|adoptions|relation_set|state|bookmarks|operation)|community_comment_(create|cancel|read|thread|own|operation)|community_notification_(list|read|preferences|mark_read|mute_set|proactive_set|operation)|community_report_(submit|list|status|operation)|finalization_(finalize|read|operation)|draft_(save|read|operation)|service_(cooperate|operation)|task_(reserve|record|read|operation)|network_(publish|discover|read|adopt|respond|withdraw|operation)|network_scope_(invite|request|accept|leave|read|operation)|network_report_(submit|status|operation|export))$",
         "hooks": [
           {
             "type": "command",

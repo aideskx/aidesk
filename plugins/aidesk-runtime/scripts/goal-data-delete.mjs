@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { isUuid, isTimestamp } from './lib/domain-inputs.mjs';
 import { parseTeachingJson, teachingRequestSha256 } from './lib/teaching-business-contract.mjs';
 import { readGoalMcpToolResult, validGoalAccountSubject, withExpectedGoalAccount } from './lib/goal-mcp-transport.mjs';
-import { GOAL_NETWORK_DELETE_CONTRACT, GOAL_NETWORK_DELETE_EXCLUSIONS, parseGoalNetworkDeleteInput, validGoalNetworkDeleteResult, validGoalNetworkDeleteTarget } from './lib/goal-network-delete-contract.mjs';
-import { GOAL_DATA_DELETE_CONTRACT, GOAL_DATA_DELETE_EXCLUSIONS, parseGoalDataDeleteInput, validGoalDataDeleteResult } from './lib/goal-data-delete-contract.mjs';
+import { parseGoalNetworkDeleteInput, validGoalNetworkDeleteResult, validGoalNetworkDeleteTarget } from './lib/goal-network-delete-contract.mjs';
+import { GOAL_DATA_DELETE_EXCLUSIONS, parseGoalDataDeleteInput, validGoalDataDeleteResult } from './lib/goal-data-delete-contract.mjs';
 import { withGoalStore, loadGoalOperation, completeGoalOperation, readGoalJson, durableGoalJson, safeGoalDirectory, syncGoalDirectory,
-  goalHash, sameGoalValue, localGoalId, localNetworkTarget, networkTargetKey, networkDeletionState, networkDeletionIntent, networkDeletionCancellation, networkOperationTombstone, validGoalNetworkReadObservation, goalDeletionState, goalDeletionIntent, goalOperationTombstone, ownGoalIndex, goalTool, GOAL_PLUGIN_FORMAT, needGoal, GoalPluginError } from './goal-plugin-request.mjs';
+  communityReportOperationErasure, notificationOperationErasure, commentOperationErasure, commentCancellation, commentGoalDeletionState, interactionOperationErasure, goalHash, sameGoalValue, localGoalId, localNetworkTarget, networkTargetKey, networkDeletionState, networkDeletionIntent, networkDeletionCancellation, networkOperationTombstone, validGoalNetworkReadObservation, goalDeletionState, goalDeletionIntent, goalOperationTombstone, ownGoalIndex, goalTool, GOAL_PLUGIN_FORMAT, needGoal, GoalPluginError } from './goal-plugin-request.mjs';
 
 const FILE_LIMIT = 32768;
 const exact = (v, keys) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -34,12 +34,13 @@ function validRelative(name) {
 }
 // Only these two fixed owners share the byte-plan/unlink mechanism. This is
 // not a caller-configurable deletion framework or an arbitrary path selector.
-function selection(value) {
+function selection(value, store = null) {
   const network = typeof value !== 'string';
   needGoal(network ? validGoalNetworkDeleteTarget(value) : uuid(value), 'DELETE_SELECTOR_INVALID');
   return { value, network, field: network ? 'target' : 'goalId', key: network ? networkTargetKey(value) : value,
     plans: network ? 'network-delete-plans' : 'delete-plans', markers: network ? 'network-deleted-operations' : 'deleted-operations',
-    matches: input => network ? sameGoalValue(localNetworkTarget(input), value) : localGoalId(input) === value };
+    matches: input => network ? sameGoalValue(localNetworkTarget(input), value)
+      : localGoalId(input) === value || commentGoalDeletionState(store, input)?.receipt.goalId === value };
 }
 function validPlan(p, store, goalId, id) {
   const selected = selection(goalId);
@@ -63,7 +64,7 @@ function writeOperationMarker(store, plan) {
   else durableGoalJson(path, marker);
 }
 function planOperation(store, row, goalId, warn) {
-  const id = row.entry.input.operationId, selected = selection(goalId);
+  const id = row.entry.input.operationId, selected = selection(goalId, store);
   needGoal(selected.matches(row.entry.input), 'DELETE_GOAL_MISMATCH');
   const location = dirname(row.path) === store.pending ? 'pending' : dirname(row.path) === store.staging ? 'staging' : 'completed';
   needGoal(row.path === originalPath(store, location, id), 'DELETE_PATH_INVALID');
@@ -83,7 +84,9 @@ function planOperation(store, row, goalId, warn) {
         ? (selected.network && row.entry.input.action === 'read' && exact(receipt, ['format', 'kind', 'operationId', 'requestSha256'])
           && receipt.format === GOAL_PLUGIN_FORMAT && receipt.kind === 'observed_read_without_admission'
           && receipt.operationId === id && receipt.requestSha256 === row.entry.requestSha256) || tool.valid('operation', { contract: tool.contract, status: 'completed', terminal: true, operationId: id, requestSha256: row.entry.requestSha256, receipt },
-          { contract: tool.contract, action: 'operation', operationId: id, requestSha256: row.entry.requestSha256 }) : tool.valid(tool.action, receipt, row.entry.input);
+          { contract: tool.contract, action: 'operation', operationId: id, requestSha256: row.entry.requestSha256 }) : ['aidesk-goal-community-v1', 'aidesk-goal-community-interaction-v1'].includes(tool.contract)
+          ? tool.valid(tool.action, { contract: tool.contract, status: 'recorded', receipt }, row.entry.input)
+          : tool.valid(tool.contract === 'aidesk-goal-community-comment-v1' ? 'cancel' : tool.action, receipt, row.entry.input);
       needGoal(validReceipt && (row.state.status !== 'completed'
         || teachingRequestSha256(comparable) === row.state.receiptSha256), 'DELETE_RECEIPT_INVALID');
       add('receipt.json', raw);
@@ -128,8 +131,8 @@ function planOperation(store, row, goalId, warn) {
 /** A verified service fact fences replay without authorizing local unlink. */
 export function recordLocalGoalDeletion(store, receipt) {
   const goalId = receipt?.goalId;
-  needGoal(validGoalDataDeleteResult('preview', { contract: GOAL_DATA_DELETE_CONTRACT, status: 'deleted', goalId, receipt },
-    { contract: GOAL_DATA_DELETE_CONTRACT, goalId }), 'DELETE_RECEIPT_INVALID');
+  needGoal(validGoalDataDeleteResult('preview', { contract: receipt?.contract, status: 'deleted', goalId, receipt },
+    { contract: receipt?.contract, goalId }), 'DELETE_RECEIPT_INVALID');
   if (!store) return;
   const current = goalDeletionState(store, goalId);
   if (current?.status === 'deleted') needGoal(sameGoalValue(current.receipt, receipt), 'DELETION_RECEIPT_CONFLICT');
@@ -141,7 +144,7 @@ export function recordLocalGoalDeletion(store, receipt) {
 /** Service cancellation is a durable terminal fact, never inferred from an
  * error/not_found or local call count. Only its matching intent may be removed. */
 export function recordLocalGoalCancellation(store, receipt) {
-  const input = { contract: GOAL_DATA_DELETE_CONTRACT, operationId: receipt?.operationId, requestSha256: receipt?.requestSha256 };
+  const input = { contract: receipt?.contract, operationId: receipt?.operationId, requestSha256: receipt?.requestSha256 };
   needGoal(receipt?.status === 'cancelled' && validGoalDataDeleteResult('operation', { ...input, status: 'completed', terminal: true, receipt }, input), 'DELETE_RECEIPT_INVALID');
   if (!store) return { status: 'cancelled', intentReleased: false, localRootObserved: false };
   const dir = safeGoalDirectory(join(store.path, 'delete-cancellations'), true), path = join(dir, `${receipt.operationId}.json`);
@@ -154,11 +157,11 @@ export function recordLocalGoalCancellation(store, receipt) {
   return { status: 'cancelled', intentReleased: !!release, localRootObserved: true };
 }
 export const NETWORK_DELETION_DIRECTORIES = Object.freeze(['network-delete-intents', 'network-tombstones',
-  'network-deleted-operations', 'network-delete-plans', 'network-delete-cancellations']);
+  'network-deleted-operations', 'network-delete-plans', 'network-delete-cancellations', 'interaction-erased-operations', 'comment-erased-operations', 'comment-cancellations', 'notification-erased-operations', 'community-report-erased-operations']);
 export function recordLocalNetworkDeletion(store, receipt) {
   const target = receipt?.target;
-  needGoal(validGoalNetworkDeleteResult('preview', { contract: GOAL_NETWORK_DELETE_CONTRACT, status: 'deleted', target, receipt },
-    { contract: GOAL_NETWORK_DELETE_CONTRACT, target }), 'DELETE_RECEIPT_INVALID');
+  needGoal(validGoalNetworkDeleteResult('preview', { contract: receipt?.contract, status: 'deleted', target, receipt },
+    { contract: receipt?.contract, target }), 'DELETE_RECEIPT_INVALID');
   if (!store) return;
   const current = networkDeletionState(store, target);
   if (current?.status === 'deleted') needGoal(sameGoalValue(current.receipt, receipt), 'DELETION_RECEIPT_CONFLICT');
@@ -175,7 +178,7 @@ export function recordLocalNetworkDeletion(store, receipt) {
   }
 }
 export function recordLocalNetworkCancellation(store, receipt) {
-  const input = { contract: GOAL_NETWORK_DELETE_CONTRACT, operationId: receipt?.operationId, requestSha256: receipt?.requestSha256 };
+  const input = { contract: receipt?.contract, operationId: receipt?.operationId, requestSha256: receipt?.requestSha256 };
   needGoal(receipt?.status === 'cancelled' && validGoalNetworkDeleteResult('operation', { ...input, status: 'completed', terminal: true, receipt }, input), 'DELETE_RECEIPT_INVALID');
   if (!store) return { status: 'cancelled', intentReleased: false, localRootObserved: false };
   const dir = safeGoalDirectory(join(store.path, 'network-delete-cancellations'), true), path = join(dir, `${receipt.operationId}.json`);
@@ -214,7 +217,12 @@ export function validateLocalNetworkDeletionMetadata(store, limit = Infinity) {
         const target = name === 'network-delete-intents' ? value.input?.target : value.receipt?.target;
         needGoal(networkTargetKey(target) === file.slice(0, -5), 'DELETION_MARKER_INVALID');
         if (name === 'network-delete-intents') networkDeletionIntent(store, target); else networkDeletionState(store, target);
-      } else if (name === 'network-delete-cancellations') networkDeletionCancellation(store, file.slice(0, -5));
+      } else if (name === 'community-report-erased-operations') communityReportOperationErasure(store, file.slice(0, -5));
+      else if (name === 'notification-erased-operations') notificationOperationErasure(store, file.slice(0, -5));
+      else if (name === 'interaction-erased-operations') interactionOperationErasure(store, file.slice(0, -5));
+      else if (name === 'comment-erased-operations') commentOperationErasure(store, file.slice(0, -5));
+      else if (name === 'comment-cancellations') commentCancellation(store, file.slice(0, -5));
+      else if (name === 'network-delete-cancellations') networkDeletionCancellation(store, file.slice(0, -5));
       else {
         const marker = networkOperationTombstone(store, file.slice(0, -5));
         const plan = readGoalJson(join(store.path, 'network-delete-plans', networkTargetKey(marker.target), file));
@@ -231,7 +239,7 @@ export function completeLocalNetworkDeletion(store, receipt, options = {}) {
   recordLocalNetworkDeletion(store, receipt); return { serviceDeleted: true, ...completeLocalDeletion(store, receipt.target, options) };
 }
 function completeLocalDeletion(store, goalId, { beforeUnlink } = {}) {
-  const selected = selection(goalId), warnings = [], operations = []; let removedFiles = 0;
+  const selected = selection(goalId, store), warnings = [], operations = []; let removedFiles = 0;
   const warn = (code, operationId = null) => { if (!warnings.some(w => w.code === code && w.operationId === operationId)) warnings.push({ code, operationId }); };
   if (!store) return { [selected.field]: goalId, complete: false, removedFiles, operations, warnings: [{ code: 'LOCAL_NAMESPACE_NOT_FOUND', operationId: null }] };
   const plans = safeGoalDirectory(join(safeGoalDirectory(join(store.path, selected.plans), true), selected.key), true);
@@ -290,6 +298,24 @@ function completeLocalDeletion(store, goalId, { beforeUnlink } = {}) {
       else { warn('UNATTRIBUTED_LOCAL_ITEM', id); operations.push({ operationId: id, status: 'partially_cleared' }); }
     } catch (e) { warn(safeCode(e), id); operations.push({ operationId: id, status: 'not_cleared' }); }
   }
+  // Cancelled creates have metadata-only receipts outside the original folder.
+  // Remove those only under this exact, already-recorded service deletion.
+  // The target/goal tombstone continues fencing every late Post after removal.
+  if (readdirSync(store.path).includes('comment-cancellations')) {
+    try {
+      const dir = safeGoalDirectory(join(store.path, 'comment-cancellations'));
+      for (const file of readdirSync(dir)) {
+        needGoal(file.endsWith('.json') && uuid(file.slice(0, -5)), 'COMMENT_CANCELLATION_INVALID');
+        const id = file.slice(0, -5), receipt = commentCancellation(store, id);
+        if (!selected.matches(receipt.request)) continue;
+        const path = join(dir, file), raw = bytes(path);
+        needGoal(sameGoalValue(parseTeachingJson(raw.toString('utf8'), FILE_LIMIT).receipt, receipt), 'COMMENT_CANCELLATION_INVALID');
+        beforeUnlink?.({ operationId: id, relativePath: `comment-cancellations/${file}`, removedFiles });
+        needGoal(bytes(path).equals(raw), 'DELETE_FILE_CHANGED');
+        unlinkSync(path); syncGoalDirectory(dir); removedFiles++;
+      }
+    } catch (e) { warn(safeCode(e)); }
+  }
   // Thin global indices remain immutable. Missing body attribution and unknown
   // owner temporaries are retained; account-wide scans never open other bodies.
   try { for (const name of readdirSync(store.indices)) {
@@ -328,9 +354,9 @@ export async function deleteNetworkData({ subject, dataRoot, input, response }) 
   const receipt = action === 'delete' ? businessResult : businessResult.receipt;
   needGoal(receipt?.status === 'deleted', 'DELETE_NOT_CONFIRMED');
   if (dataRoot === null || dataRoot === undefined) return { serviceDeleted: true, target: receipt.target, complete: false, removedFiles: 0, operations: [],
-    warnings: [{ code: 'LOCAL_ROOT_NOT_PROVIDED', operationId: null }], exclusions: GOAL_NETWORK_DELETE_EXCLUSIONS };
+    warnings: [{ code: 'LOCAL_ROOT_NOT_PROVIDED', operationId: null }], exclusions: receipt.exclusions };
   needGoal(typeof dataRoot === 'string' && isAbsolute(dataRoot), 'PLUGIN_DATA_REQUIRED');
-  return withGoalStore({ subject, dataRoot }, store => ({ ...completeLocalNetworkDeletion(store, receipt), exclusions: GOAL_NETWORK_DELETE_EXCLUSIONS }));
+  return withGoalStore({ subject, dataRoot }, store => ({ ...completeLocalNetworkDeletion(store, receipt), exclusions: receipt.exclusions }));
 }
 async function main() {
   const [command, ...args] = process.argv.slice(2), options = {};

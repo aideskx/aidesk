@@ -1,3 +1,9 @@
+import { GOAL_COMMUNITY_CONTRACT, goalCommunityToolAction, parseGoalCommunityInput, validGoalCommunityResult, goalCommunityIsWrite } from './lib/goal-community-contract.mjs';
+import { GOAL_COMMUNITY_INTERACTION_CONTRACT, goalCommunityInteractionToolAction, parseGoalCommunityInteractionInput, validGoalCommunityInteractionResult, goalCommunityInteractionIsWrite } from './lib/goal-community-interaction-contract.mjs';
+import { GOAL_COMMUNITY_REPORT_CONTRACT, goalCommunityReportToolAction, parseGoalCommunityReportInput, validGoalCommunityReportResult, goalCommunityReportIsWrite } from './lib/goal-community-report-contract.mjs';
+import { GOAL_COMMUNITY_NOTIFICATION_CONTRACT, goalCommunityNotificationToolAction, parseGoalCommunityNotificationInput, validGoalCommunityNotificationResult, goalCommunityNotificationIsWrite } from './lib/goal-community-notification-contract.mjs';
+import { GOAL_FINALIZATION_CONTRACT, goalFinalizationToolAction, parseGoalFinalizationInput, validGoalFinalizationResult } from './lib/goal-finalization-contract.mjs';
+import { GOAL_SHARE_PREFERENCE_CONTRACT, goalSharePreferenceToolAction, parseGoalSharePreferenceInput, validGoalSharePreferenceResult, goalSharePreferenceIsWrite } from './lib/goal-share-preference-contract.mjs';
 /** Mechanical request preparation for the same Plugin; no network or host-history reads.
  * Hooks use the host's PLUGIN_DATA; recovery CLI uses only the explicit root
  * observed in that Hook's context. Pure prepare never opens a data directory.
@@ -19,14 +25,15 @@ import { TextDecoder } from 'node:util';
 import { withGoalFileLock, GoalFileLockError } from './goal-file-lock.mjs';
 import { isUuid, isTimestamp } from './lib/domain-inputs.mjs';
 import { canonicalTeachingJson, parseTeachingJson, teachingRequestSha256 } from './lib/teaching-business-contract.mjs';
-import { GOAL_DRAFT_CONTRACT, goalDraftToolAction, parseGoalDraftInput, validGoalDraftResult } from './lib/goal-draft-contract.mjs';
+import { GOAL_DRAFT_CONTRACT, GOAL_DRAFT_V2_CONTRACT, goalDraftToolAction, parseGoalDraftInput, validGoalDraftResult } from './lib/goal-draft-contract.mjs';
 import { GOAL_SERVICE_CONTRACT, GOAL_PLATFORM_SERVICE_CONTRACT, goalServiceToolAction, parseGoalServiceInput, validGoalServiceResult } from './lib/goal-service-contract.mjs';
 import { GOAL_TASK_CONTRACT, goalTaskToolAction, parseGoalTaskInput, validGoalTaskResult } from './lib/goal-task-contract.mjs';
+import { GOAL_COMMUNITY_COMMENT_CONTRACT, goalCommunityCommentToolAction, parseGoalCommunityCommentInput, validGoalCommunityCommentResult, validGoalCommunityCommentReceipt } from './lib/goal-community-comment-contract.mjs';
 import { GOAL_NETWORK_CONTRACT, goalNetworkToolAction, parseGoalNetworkInput, validGoalNetworkResult, goalNetworkIsWrite, goalNetworkMetadata } from './lib/goal-network-contract.mjs';
 import { GOAL_NETWORK_SCOPE_CONTRACT, goalNetworkScopeToolAction, parseGoalNetworkScopeInput, validGoalNetworkScopeResult, goalNetworkScopeIsWrite } from './lib/goal-network-scope-contract.mjs';
 import { GOAL_NETWORK_REPORT_CONTRACT, goalNetworkReportToolAction, parseGoalNetworkReportInput, validGoalNetworkReportResult, goalNetworkReportIsWrite } from './lib/goal-network-report-contract.mjs';
-import { GOAL_DATA_DELETE_CONTRACT, goalDataDeleteToolAction, parseGoalDataDeleteInput, validGoalDataDeleteResult } from './lib/goal-data-delete-contract.mjs';
-import { GOAL_NETWORK_DELETE_CONTRACT, goalNetworkDeleteToolAction, parseGoalNetworkDeleteInput, validGoalNetworkDeleteResult, validGoalNetworkDeleteTarget } from './lib/goal-network-delete-contract.mjs';
+import { GOAL_DATA_DELETE_CONTRACT, GOAL_DATA_DELETE_V2_CONTRACT, GOAL_DATA_DELETE_V3_CONTRACT, GOAL_DATA_DELETE_V4_CONTRACT, GOAL_DATA_DELETE_V5_CONTRACT, goalDataDeleteToolAction, parseGoalDataDeleteInput, validGoalDataDeleteResult } from './lib/goal-data-delete-contract.mjs';
+import { GOAL_NETWORK_DELETE_CONTRACT, GOAL_NETWORK_DELETE_V2_CONTRACT, GOAL_NETWORK_DELETE_V3_CONTRACT, GOAL_NETWORK_DELETE_V4_CONTRACT, GOAL_NETWORK_DELETE_V5_CONTRACT, goalNetworkDeleteToolAction, parseGoalNetworkDeleteInput, validGoalNetworkDeleteResult, validGoalNetworkDeleteTarget } from './lib/goal-network-delete-contract.mjs';
 import { validGoalAccountSubject, withExpectedGoalAccount } from './lib/goal-mcp-transport.mjs';
 
 export const GOAL_PLUGIN_FORMAT = 'aidesk-goal-plugin-v1';
@@ -43,6 +50,27 @@ export const opaqueGoalId = value => typeof value === 'string' && value.isWellFo
   && Buffer.byteLength(value) <= 512 && !/[\p{Cc}\p{Cf}]/u.test(value);
 
 export function goalTool(name) {
+  const communityReport = goalCommunityReportToolAction(name);
+  if (communityReport) return { action: communityReport, contract: GOAL_COMMUNITY_REPORT_CONTRACT, parse: parseGoalCommunityReportInput,
+    valid: validGoalCommunityReportResult, write: goalCommunityReportIsWrite(communityReport), operationTool: 'aidesk_goal_community_report_operation' };
+  const notification = goalCommunityNotificationToolAction(name);
+  if (notification) return { action: notification, contract: GOAL_COMMUNITY_NOTIFICATION_CONTRACT, parse: parseGoalCommunityNotificationInput,
+    valid: validGoalCommunityNotificationResult, write: goalCommunityNotificationIsWrite(notification), operationTool: 'aidesk_goal_community_notification_operation' };
+  const comment = goalCommunityCommentToolAction(name);
+  if (comment) return { action: comment, contract: GOAL_COMMUNITY_COMMENT_CONTRACT, parse: parseGoalCommunityCommentInput,
+    valid: validGoalCommunityCommentResult, write: comment === 'create', operationTool: 'aidesk_goal_community_comment_operation' };
+  const interaction = goalCommunityInteractionToolAction(name);
+  if (interaction) return { action: interaction, contract: GOAL_COMMUNITY_INTERACTION_CONTRACT, parse: parseGoalCommunityInteractionInput,
+    valid: validGoalCommunityInteractionResult, write: goalCommunityInteractionIsWrite(interaction), operationTool: 'aidesk_goal_community_interaction_operation' };
+  const community = goalCommunityToolAction(name);
+  if (community) return { action: community, contract: GOAL_COMMUNITY_CONTRACT, parse: parseGoalCommunityInput, valid: validGoalCommunityResult,
+    write: goalCommunityIsWrite(community), operationTool: 'aidesk_goal_community_operation' };
+  const finalization = goalFinalizationToolAction(name);
+  if (finalization) return { action: finalization, contract: GOAL_FINALIZATION_CONTRACT, parse: parseGoalFinalizationInput, valid: validGoalFinalizationResult,
+    write: finalization === 'finalize', operationTool: 'aidesk_goal_finalization_operation' };
+  const sharePreference = goalSharePreferenceToolAction(name);
+  if (sharePreference) return { action: sharePreference, contract: GOAL_SHARE_PREFERENCE_CONTRACT, parse: parseGoalSharePreferenceInput, valid: validGoalSharePreferenceResult,
+    write: goalSharePreferenceIsWrite(sharePreference), operationTool: 'aidesk_goal_share_preference_operation' };
   const draft = goalDraftToolAction(name), service = goalServiceToolAction(name), task = goalTaskToolAction(name), network = goalNetworkToolAction(name);
   const deletion = goalDataDeleteToolAction(name), scope = goalNetworkScopeToolAction(name), report = goalNetworkReportToolAction(name), networkDeletion = goalNetworkDeleteToolAction(name);
   if (report) return { action: report, contract: GOAL_NETWORK_REPORT_CONTRACT, parse: parseGoalNetworkReportInput, valid: validGoalNetworkReportResult,
@@ -74,6 +102,14 @@ function validNetworkCore(value, input) {
   return validGoalNetworkResult('operation', { contract: GOAL_NETWORK_CONTRACT, status: 'completed', terminal: true,
     operationId: query.operationId, requestSha256: query.requestSha256, receipt: value }, query)
     && sameGoalValue(value.request, goalNetworkMetadata(input));
+}
+function validCommunityCore(value, input) {
+  return validGoalCommunityResult(input.action, { contract: GOAL_COMMUNITY_CONTRACT, status: 'recorded', receipt: value }, input)
+    && sameGoalValue(value.request, input);
+}
+function validInteractionCore(value, input) {
+  return validGoalCommunityInteractionResult(input.action, { contract: GOAL_COMMUNITY_INTERACTION_CONTRACT, status: 'recorded', receipt: value }, input)
+    && sameGoalValue(value.request, input);
 }
 function validScopeCore(value, input) {
   return validGoalNetworkScopeResult(input.action, { contract: GOAL_NETWORK_SCOPE_CONTRACT, status: 'recorded', receipt: value }, input)
@@ -186,6 +222,21 @@ export async function withGoalStore({ dataRoot = process.env.PLUGIN_DATA, subjec
   return lockedGoalDirectory(path, () => run(store));
 }
 const serviceContract = value => [GOAL_SERVICE_CONTRACT, GOAL_PLATFORM_SERVICE_CONTRACT].includes(value);
+const draftContract = value => [GOAL_DRAFT_CONTRACT, GOAL_DRAFT_V2_CONTRACT].includes(value);
+const goalDeleteContract = value => [GOAL_DATA_DELETE_CONTRACT, GOAL_DATA_DELETE_V2_CONTRACT, GOAL_DATA_DELETE_V3_CONTRACT, GOAL_DATA_DELETE_V4_CONTRACT, GOAL_DATA_DELETE_V5_CONTRACT].includes(value);
+const networkDeleteContract = value => [GOAL_NETWORK_DELETE_CONTRACT, GOAL_NETWORK_DELETE_V2_CONTRACT, GOAL_NETWORK_DELETE_V3_CONTRACT, GOAL_NETWORK_DELETE_V4_CONTRACT, GOAL_NETWORK_DELETE_V5_CONTRACT].includes(value);
+const versionedOriginal = name => ['aidesk_goal_service_cooperate', 'aidesk_goal_draft_save', 'aidesk_goal_data_delete', 'aidesk_goal_network_delete'].includes(name);
+const originalContract = (name, value) => name === 'aidesk_goal_service_cooperate' ? serviceContract(value)
+  : name === 'aidesk_goal_data_delete' ? goalDeleteContract(value) : name === 'aidesk_goal_network_delete' ? networkDeleteContract(value)
+    : name === 'aidesk_goal_draft_save' && draftContract(value);
+function recoveredContract(entry) {
+  if (!versionedOriginal(entry.tool)) return goalTool(entry.tool).contract;
+  // Before their v2 contracts, unversioned draft/delete claims could only be v1.
+  // New claims always include their contract, even across a prewrite crash.
+  const contract = entry.input?.contract ?? entry.contract ?? (entry.tool === 'aidesk_goal_draft_save' ? GOAL_DRAFT_CONTRACT : entry.tool === 'aidesk_goal_data_delete' ? GOAL_DATA_DELETE_CONTRACT : entry.tool === 'aidesk_goal_network_delete' ? GOAL_NETWORK_DELETE_CONTRACT : undefined);
+  needGoal(originalContract(entry.tool, contract), 'ORIGINAL_CONTRACT_UNKNOWN');
+  return contract;
+}
 function checkIndex(store, operationId, tool, requestSha256, contract) {
   let saved;
   try { saved = ownGoalIndex(store, operationId); }
@@ -198,7 +249,7 @@ export function ownGoalIndex(store, operationId) {
   const claim = readGoalJson(join(store.indices, `${operationId}.json`), null);
   const keys = ['format', 'subject', 'tool', 'requestSha256'];
   needGoal(claim && (exact(claim, keys) || exact(claim, [...keys, 'contract'])
-      && claim.tool === 'aidesk_goal_service_cooperate' && serviceContract(claim.contract))
+      && originalContract(claim.tool, claim.contract))
     && claim.format === GOAL_PLUGIN_FORMAT && claim.subject === store.subject && hash(claim.requestSha256), 'ORIGINAL_NOT_FOUND');
   needGoal(goalTool(claim.tool).write, 'ORIGINAL_INVALID'); return claim;
 }
@@ -207,6 +258,24 @@ const ownIndex = ownGoalIndex;
 export const localGoalId = input => input?.goalId ?? input?.goalRef?.goalId ?? null;
 /** A source post never selects independent responses or adopted goal copies. */
 export function localNetworkTarget(input) {
+  if (input?.contract === GOAL_COMMUNITY_REPORT_CONTRACT && input.action === 'submit') {
+    const target = { kind: 'community_report', reportId: input.operationId };
+    needGoal(validGoalNetworkDeleteTarget(target), 'NETWORK_TARGET_INVALID'); return target;
+  }
+  if (input?.contract === GOAL_COMMUNITY_NOTIFICATION_CONTRACT) {
+    const target = input.action === 'mark_read' ? { kind: 'community_notification', notificationId: input.notificationId }
+      : ['mute_set', 'proactive_set'].includes(input.action) ? { kind: 'community_notification_settings', generation: input.expectedGeneration } : null;
+    if (target !== null) needGoal(validGoalNetworkDeleteTarget(target), 'NETWORK_TARGET_INVALID');
+    return target;
+  }
+  if (input?.contract === GOAL_COMMUNITY_COMMENT_CONTRACT && input.source && input.commentId) {
+    const target = { kind: 'community_comment', publicId: input.source.publicId, commentId: input.commentId };
+    needGoal(validGoalNetworkDeleteTarget(target), 'NETWORK_TARGET_INVALID'); return target;
+  }
+  if (input?.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT && input.action === 'relation_set') {
+    const target = { kind: 'community_relationships', publicId: input.publicId, generation: input.expectedGeneration };
+    needGoal(validGoalNetworkDeleteTarget(target), 'NETWORK_TARGET_INVALID'); return target;
+  }
   if (input?.contract !== GOAL_NETWORK_CONTRACT) return null;
   const kind = input.action === 'publish' ? 'post' : input.action === 'respond' ? 'response'
     : input.action === 'read' ? input.view : input.action === 'withdraw' ? input.target : null;
@@ -243,15 +312,26 @@ export function goalDeletionState(store, goalId) {
     if (value === null) continue;
     if (name === 'goal-tombstones') {
       needGoal(exact(value, ['format', 'subject', 'receipt']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
-        && validGoalDataDeleteResult('preview', { contract: GOAL_DATA_DELETE_CONTRACT, status: 'deleted', goalId, receipt: value.receipt },
-          { contract: GOAL_DATA_DELETE_CONTRACT, goalId }), 'DELETION_MARKER_INVALID');
+        && validGoalDataDeleteResult('preview', { contract: value.receipt?.contract, status: 'deleted', goalId, receipt: value.receipt },
+          { contract: value.receipt?.contract, goalId }), 'DELETION_MARKER_INVALID');
       return { status: 'deleted', ...value };
     }
     return { status: 'delete_pending', ...goalDeletionIntent(store, goalId) };
   }
   return null;
 }
-export function assertGoalWritable(store, input) {
+export function assertGoalWritable(store, input, commentCancellationCompletion = false) {
+  if (input?.contract === GOAL_COMMUNITY_REPORT_CONTRACT)
+    needGoal(!communityReportOperationErasure(store, input.operationId), 'COMMUNITY_REPORT_ORIGINAL_ERASED');
+  if (input?.contract === GOAL_COMMUNITY_NOTIFICATION_CONTRACT)
+    needGoal(!notificationOperationErasure(store, input.operationId), 'NOTIFICATION_ORIGINAL_ERASED');
+  if (input?.contract === GOAL_COMMUNITY_COMMENT_CONTRACT) {
+    needGoal(!commentOperationErasure(store, input.operationId), 'COMMENT_ORIGINAL_ERASED');
+    needGoal(commentCancellationCompletion || !commentCancellation(store, input.operationId), 'COMMENT_OPERATION_CANCELLED');
+    needGoal(!commentGoalDeletionState(store, input), 'GOAL_DELETED');
+  }
+  if (input?.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT)
+    needGoal(!interactionOperationErasure(store, input.operationId), 'INTERACTION_ORIGINAL_ERASED');
   const state = goalDeletionState(store, localGoalId(input));
   needGoal(!state, state?.status === 'deleted' ? 'GOAL_DELETED' : 'GOAL_DELETE_PENDING');
   const network = networkDeletionState(store, localNetworkTarget(input));
@@ -274,7 +354,7 @@ export function goalDeletionCancellation(store, operationId) {
   needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
   const dir = deletionDirectory(store, 'delete-cancellations'); if (!dir) return null;
   const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
-  const input = { contract: GOAL_DATA_DELETE_CONTRACT, operationId, requestSha256: value.receipt?.requestSha256 };
+  const input = { contract: value.receipt?.contract, operationId, requestSha256: value.receipt?.requestSha256 };
   needGoal(exact(value, ['format', 'subject', 'receipt']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
     && value.receipt?.status === 'cancelled' && validGoalDataDeleteResult('operation', { ...input, status: 'completed', terminal: true, receipt: value.receipt }, input), 'DELETION_CANCELLATION_INVALID');
   return value.receipt;
@@ -304,8 +384,8 @@ export function networkDeletionState(store, target) {
   const value = dir ? readGoalJson(join(dir, `${key}.json`), null) : null;
   if (value !== null) {
     needGoal(exact(value, ['format', 'subject', 'receipt']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
-      && validGoalNetworkDeleteResult('preview', { contract: GOAL_NETWORK_DELETE_CONTRACT, status: 'deleted', target, receipt: value.receipt },
-        { contract: GOAL_NETWORK_DELETE_CONTRACT, target }), 'DELETION_MARKER_INVALID');
+      && validGoalNetworkDeleteResult('preview', { contract: value.receipt?.contract, status: 'deleted', target, receipt: value.receipt },
+        { contract: value.receipt?.contract, target }), 'DELETION_MARKER_INVALID');
     return { status: 'deleted', ...value };
   }
   const intent = networkDeletionIntent(store, target); return intent ? { status: 'delete_pending', ...intent } : null;
@@ -327,7 +407,7 @@ export function networkDeletionCancellation(store, operationId) {
   needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
   const dir = deletionDirectory(store, 'network-delete-cancellations'); if (!dir) return null;
   const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
-  const input = { contract: GOAL_NETWORK_DELETE_CONTRACT, operationId, requestSha256: value.receipt?.requestSha256 };
+  const input = { contract: value.receipt?.contract, operationId, requestSha256: value.receipt?.requestSha256 };
   needGoal(exact(value, ['format', 'subject', 'receipt']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
     && value.receipt?.status === 'cancelled' && validGoalNetworkDeleteResult('operation', { ...input, status: 'completed', terminal: true, receipt: value.receipt }, input), 'DELETION_CANCELLATION_INVALID');
   return value.receipt;
@@ -344,10 +424,177 @@ export function networkOperationTombstone(store, operationId) {
   const deletion = networkDeletionState(store, value.target); needGoal(deletion?.status === 'deleted', 'DELETION_MARKER_INVALID');
   return { ...value, receipt: deletion.receipt };
 }
-const deletionToolPrefix = contract => contract === GOAL_NETWORK_DELETE_CONTRACT ? 'aidesk_goal_network_delete' : 'aidesk_goal_data_delete';
-const deletionContract = contract => [GOAL_DATA_DELETE_CONTRACT, GOAL_NETWORK_DELETE_CONTRACT].includes(contract);
+/** An observed erased original is a write fence, not a deletion receipt for
+ * the whole target. Exact data preview/receipt is still required for unlink. */
+export function interactionOperationErasure(store, operationId) {
+  if (!store) return null;
+  needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
+  const dir = deletionDirectory(store, 'interaction-erased-operations'); if (!dir) return null;
+  const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
+  const r = value.erasure, query = { contract: GOAL_COMMUNITY_INTERACTION_CONTRACT, action: 'operation', operationId, requestSha256: r?.requestSha256 };
+  needGoal(exact(value, ['format', 'subject', 'erasure']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
+    && r?.status === 'erased' && validGoalCommunityInteractionResult('operation', r, query), 'ERASURE_MARKER_INVALID');
+  checkIndex(store, operationId, `aidesk_goal_community_interaction_${r.action}`, r.requestSha256);
+  return r;
+}
+export function recordInteractionErasure(store, input, erasure) {
+  needGoal(erasure?.status === 'erased' && validGoalCommunityInteractionResult('operation', erasure, input), 'ERASURE_MARKER_INVALID');
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return false;
+  checkIndex(store, input.operationId, `aidesk_goal_community_interaction_${erasure.action}`, input.requestSha256);
+  let row;
+  try { row = loadGoalOperation(store, input.operationId); }
+  catch (error) { if (!(error instanceof GoalPluginError && ['ORIGINAL_NOT_FOUND', 'ORIGINAL_NOT_READY'].includes(error.code))) throw error; }
+  if (row) needGoal(sameGoalValue(erasure.target, row.entry.input.action === 'adopt'
+    ? { kind: 'goal', goalId: localGoalId(row.entry.input) } : localNetworkTarget(row.entry.input)), 'ERASURE_TARGET_MISMATCH');
+  const previous = interactionOperationErasure(store, input.operationId);
+  if (previous) needGoal(sameGoalValue(previous, erasure), 'ERASURE_MARKER_INVALID');
+  else durableGoalJson(join(deletionDirectory(store, 'interaction-erased-operations', true), `${input.operationId}.json`),
+    { format: GOAL_PLUGIN_FORMAT, subject: store.subject, erasure });
+  return true;
+}
+/** Erased reporter originals fence late replies; retained handling facts never
+ * authorize source removal or local unlink. */
+export function communityReportOperationErasure(store, operationId) {
+  if (!store) return null;
+  needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
+  const dir = deletionDirectory(store, 'community-report-erased-operations'); if (!dir) return null;
+  const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
+  const r = value.erasure, query = { contract: GOAL_COMMUNITY_REPORT_CONTRACT, action: 'operation', operationId, requestSha256: r?.requestSha256 };
+  needGoal(exact(value, ['format', 'subject', 'erasure']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
+    && r?.status === 'erased' && validGoalCommunityReportResult('operation', r, query), 'ERASURE_MARKER_INVALID');
+  checkIndex(store, operationId, `aidesk_goal_community_report_${r.action}`, r.requestSha256);
+  return r;
+}
+export function recordCommunityReportErasure(store, input, erasure) {
+  needGoal(erasure?.status === 'erased' && validGoalCommunityReportResult('operation', erasure, input), 'ERASURE_MARKER_INVALID');
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return false;
+  checkIndex(store, input.operationId, `aidesk_goal_community_report_${erasure.action}`, input.requestSha256);
+  const row = optionalCommentOriginal(store, input.operationId);
+  if (row) needGoal(sameGoalValue(erasure.target, localNetworkTarget(row.entry.input)), 'ERASURE_TARGET_MISMATCH');
+  const previous = communityReportOperationErasure(store, input.operationId);
+  if (previous) needGoal(sameGoalValue(previous, erasure), 'ERASURE_MARKER_INVALID');
+  else durableGoalJson(join(deletionDirectory(store, 'community-report-erased-operations', true), `${input.operationId}.json`),
+    { format: GOAL_PLUGIN_FORMAT, subject: store.subject, erasure });
+  return true;
+}
+export function assertCommunityReportOperation(store, input) {
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return;
+  const owner = ownGoalIndex(store, input.operationId), tool = goalTool(owner.tool);
+  needGoal(tool.contract === GOAL_COMMUNITY_REPORT_CONTRACT && tool.write && owner.requestSha256 === input.requestSha256,
+    'ORIGINAL_OWNER_OR_CONTENT_CONFLICT');
+}
+export function notificationOperationErasure(store, operationId) {
+  if (!store) return null;
+  needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
+  const dir = deletionDirectory(store, 'notification-erased-operations'); if (!dir) return null;
+  const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
+  const r = value.erasure, query = { contract: GOAL_COMMUNITY_NOTIFICATION_CONTRACT, action: 'operation', operationId, requestSha256: r?.requestSha256 };
+  needGoal(exact(value, ['format', 'subject', 'erasure']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
+    && r?.status === 'erased' && validGoalCommunityNotificationResult('operation', r, query), 'ERASURE_MARKER_INVALID');
+  checkIndex(store, operationId, `aidesk_goal_community_notification_${r.action}`, r.requestSha256);
+  return r;
+}
+export function recordNotificationErasure(store, input, erasure) {
+  needGoal(erasure?.status === 'erased' && validGoalCommunityNotificationResult('operation', erasure, input), 'ERASURE_MARKER_INVALID');
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return false;
+  checkIndex(store, input.operationId, `aidesk_goal_community_notification_${erasure.action}`, input.requestSha256);
+  const row = optionalCommentOriginal(store, input.operationId);
+  if (row) needGoal(sameGoalValue(erasure.target, localNetworkTarget(row.entry.input)), 'ERASURE_TARGET_MISMATCH');
+  const previous = notificationOperationErasure(store, input.operationId);
+  if (previous) needGoal(sameGoalValue(previous, erasure), 'ERASURE_MARKER_INVALID');
+  else durableGoalJson(join(deletionDirectory(store, 'notification-erased-operations', true), `${input.operationId}.json`),
+    { format: GOAL_PLUGIN_FORMAT, subject: store.subject, erasure });
+  return true;
+}
+export function assertNotificationOperation(store, input) {
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return;
+  const owner = ownGoalIndex(store, input.operationId), tool = goalTool(owner.tool);
+  needGoal(tool.contract === GOAL_COMMUNITY_NOTIFICATION_CONTRACT && tool.write && owner.requestSha256 === input.requestSha256,
+    'ORIGINAL_OWNER_OR_CONTENT_CONFLICT');
+}
+/** A comment observation fences replay only. It never authorizes local unlink. */
+export function commentOperationErasure(store, operationId) {
+  if (!store) return null;
+  needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
+  const dir = deletionDirectory(store, 'comment-erased-operations'); if (!dir) return null;
+  const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
+  const r = value.erasure, query = { contract: GOAL_COMMUNITY_COMMENT_CONTRACT, operationId, requestSha256: r?.requestSha256 };
+  needGoal(exact(value, ['format', 'subject', 'erasure']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
+    && r?.status === 'erased' && validGoalCommunityCommentResult('operation', r, query), 'ERASURE_MARKER_INVALID');
+  checkIndex(store, operationId, 'aidesk_goal_community_comment_create', r.requestSha256);
+  return r;
+}
+export function recordCommentErasure(store, input, erasure) {
+  needGoal(erasure?.status === 'erased' && validGoalCommunityCommentResult('operation', erasure, input), 'ERASURE_MARKER_INVALID');
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return false;
+  checkIndex(store, input.operationId, 'aidesk_goal_community_comment_create', input.requestSha256);
+  const row = optionalCommentOriginal(store, input.operationId);
+  if (row) needGoal(sameGoalValue(erasure.target, localNetworkTarget(row.entry.input)), 'ERASURE_TARGET_MISMATCH');
+  const previous = commentOperationErasure(store, input.operationId);
+  if (previous) needGoal(sameGoalValue(previous, erasure), 'ERASURE_MARKER_INVALID');
+  else durableGoalJson(join(deletionDirectory(store, 'comment-erased-operations', true), `${input.operationId}.json`),
+    { format: GOAL_PLUGIN_FORMAT, subject: store.subject, erasure });
+  return true;
+}
+function optionalCommentOriginal(store, operationId) {
+  try { return loadGoalOperation(store, operationId); }
+  catch (error) { if (!(error instanceof GoalPluginError && ['ORIGINAL_NOT_FOUND', 'ORIGINAL_NOT_READY'].includes(error.code))) throw error; }
+  return null;
+}
+export function commentCancellation(store, operationId) {
+  if (!store) return null;
+  needGoal(uuid(operationId), 'OPERATION_ID_INVALID');
+  const dir = deletionDirectory(store, 'comment-cancellations'); if (!dir) return null;
+  const value = readGoalJson(join(dir, `${operationId}.json`), null); if (value === null) return null;
+  const r = value.receipt;
+  needGoal(exact(value, ['format', 'subject', 'receipt']) && value.format === GOAL_PLUGIN_FORMAT && value.subject === store.subject
+    && r?.status === 'cancelled' && validGoalCommunityCommentReceipt(r, operationId, r?.requestSha256), 'COMMENT_CANCELLATION_INVALID');
+  checkIndex(store, operationId, 'aidesk_goal_community_comment_create', r.requestSha256);
+  return r;
+}
+export function recordCommentCancellation(store, input, receipt) {
+  const query = { contract: GOAL_COMMUNITY_COMMENT_CONTRACT, operationId: input.operationId,
+    requestSha256: input.requestSha256 ?? teachingRequestSha256(input) };
+  needGoal(receipt?.status === 'cancelled' && validGoalCommunityCommentReceipt(receipt, query.operationId, query.requestSha256), 'COMMENT_CANCELLATION_INVALID');
+  if (!store || readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return false;
+  checkIndex(store, query.operationId, 'aidesk_goal_community_comment_create', query.requestSha256);
+  needGoal(!commentOperationErasure(store, query.operationId) && !networkOperationTombstone(store, query.operationId)
+    && !goalOperationTombstone(store, query.operationId), 'COMMENT_ORIGINAL_ERASED');
+  // Metadata still has the exact comment selector when a prewrite crash left
+  // only its thin owner claim. A later goal tombstone must fence it too.
+  assertGoalWritable(store, receipt.request, true);
+  const row = optionalCommentOriginal(store, query.operationId);
+  if (row) {
+    needGoal(validGoalCommunityCommentResult('cancel', receipt, row.entry.input), 'COMMENT_CANCELLATION_INVALID');
+    assertGoalWritable(store, row.entry.input, true);
+    const previousReceipt = readGoalJson(join(row.path, 'receipt.json'), null);
+    if (previousReceipt !== null) needGoal(sameGoalValue(previousReceipt, receipt), 'TERMINAL_RECEIPT_CONFLICT');
+    if (row.state.status === 'completed') needGoal(row.state.receiptSha256 === teachingRequestSha256(receipt), 'TERMINAL_RECEIPT_CONFLICT');
+  }
+  const previous = commentCancellation(store, query.operationId);
+  if (previous) needGoal(sameGoalValue(previous, receipt), 'COMMENT_CANCELLATION_INVALID');
+  else durableGoalJson(join(deletionDirectory(store, 'comment-cancellations', true), `${query.operationId}.json`),
+    { format: GOAL_PLUGIN_FORMAT, subject: store.subject, receipt });
+  return true;
+}
+/** Only the validated service receipt binds a private goal to this public
+ * scope. Never derive a private goal ID from an arbitrary public ID. */
+export function commentGoalDeletionState(store, input) {
+  if (!store || input?.contract !== GOAL_COMMUNITY_COMMENT_CONTRACT || !input.source) return null;
+  const dir = deletionDirectory(store, 'goal-tombstones'); if (!dir) return null;
+  for (const file of readdirSync(dir)) {
+    const id = file.endsWith('.json') ? file.slice(0, -5) : null;
+    if (!uuid(id)) continue;
+    const state = goalDeletionState(store, id);
+    if (state?.status === 'deleted' && [GOAL_DATA_DELETE_V4_CONTRACT, GOAL_DATA_DELETE_V5_CONTRACT].includes(state.receipt.contract)
+      && state.receipt.commentScope?.publicId === input.source.publicId) return state;
+  }
+  return null;
+}
+const deletionToolPrefix = contract => networkDeleteContract(contract) ? 'aidesk_goal_network_delete' : 'aidesk_goal_data_delete';
+const deletionContract = contract => goalDeleteContract(contract) || networkDeleteContract(contract);
 function stageDeletion(store, input, validateOnly = false) {
-  return input.contract === GOAL_NETWORK_DELETE_CONTRACT
+  return networkDeleteContract(input.contract)
     ? (validateOnly ? validateNetworkDeletionIntent : stageNetworkDeletionIntent)(store, input)
     : (validateOnly ? validateGoalDeletionIntent : stageGoalDeletionIntent)(store, input);
 }
@@ -355,7 +602,7 @@ function claimIndex(store, operationId, tool, requestSha256, contract) {
   const path = join(store.indices, `${operationId}.json`);
   if (readGoalJson(path, null) !== null) { checkIndex(store, operationId, tool, requestSha256, contract); return; }
   const value = { format: GOAL_PLUGIN_FORMAT, subject: store.subject, tool, requestSha256,
-    ...(tool === 'aidesk_goal_service_cooperate' ? { contract } : {}) };
+    ...(versionedOriginal(tool) ? { contract } : {}) };
   const temporary = `${path}.${randomUUID()}.tmp`; durableGoalJson(temporary, value, true);
   try {
     try { linkSync(temporary, path); syncDirectory(store.indices); }
@@ -393,7 +640,12 @@ export function loadGoalOperation(store, operationId) {
 }
 // A service operation read can use an immutable thin claim, but cannot choose a
 // version from today's policy or from the tool name. No directory is created.
-export function assertGoalServiceOperation(store, input) {
+export const assertGoalServiceOperation = (store, input) => assertVersionedOperation(store, input, 'aidesk_goal_service_cooperate');
+export const assertGoalDraftOperation = (store, input) => assertVersionedOperation(store, input, 'aidesk_goal_draft_save');
+export const assertGoalDeleteOperation = (store, input) => assertVersionedOperation(store, input, 'aidesk_goal_data_delete');
+export const assertNetworkDeleteOperation = (store, input) => assertVersionedOperation(store, input, 'aidesk_goal_network_delete');
+export const assertCommentOperation = (store, input) => assertVersionedOperation(store, input, 'aidesk_goal_community_comment_create');
+function assertVersionedOperation(store, input, name) {
   if (!store) return;
   let row;
   try { row = loadGoalOperation(store, input.operationId); }
@@ -403,9 +655,8 @@ export function assertGoalServiceOperation(store, input) {
     if (readGoalJson(join(store.indices, `${input.operationId}.json`), null) === null) return;
     original = ownGoalIndex(store, input.operationId);
   }
-  const contract = original.input?.contract ?? original.contract;
-  needGoal(serviceContract(contract), 'ORIGINAL_CONTRACT_UNKNOWN');
-  needGoal(original.tool === 'aidesk_goal_service_cooperate' && original.requestSha256 === input.requestSha256
+  const contract = recoveredContract(original);
+  needGoal(original.tool === name && original.requestSha256 === input.requestSha256
     && contract === input.contract, 'ORIGINAL_MISMATCH');
 }
 function cancelledOriginal(store, operationId, claim, input = null) {
@@ -420,7 +671,7 @@ function pendingRows(store) {
     needGoal(uuid(id), 'PENDING_INVALID'); safeDirectory(join(store.pending, id));
     const row = entryAt(join(store.pending, id), store.subject, id);
     checkIndex(store, id, row.entry.tool, row.entry.requestSha256, row.entry.input.contract);
-    return cancelledOriginal(store, id, row.entry, row.entry.input) ? null : row;
+    return cancelledOriginal(store, id, row.entry, row.entry.input) || communityReportOperationErasure(store, id) || notificationOperationErasure(store, id) || interactionOperationErasure(store, id) || commentOperationErasure(store, id) || commentCancellation(store, id) ? null : row;
   }).filter(Boolean);
   // Cancelled originals remain recoverable, but the verified terminal fact
   // releases capacity as well as the intent; raw directory counts do not.
@@ -433,7 +684,7 @@ function stagingRows(store) {
     const claim = ownIndex(store, operationId);
     const entry = readGoalJson(join(path, 'request.json'), null) === null ? null : entryAt(path, store.subject, operationId).entry;
     if (entry) checkIndex(store, operationId, entry.tool, entry.requestSha256, entry.input.contract);
-    return cancelledOriginal(store, operationId, claim, entry?.input) ? null : { operationId, tool: claim.tool,
+    return cancelledOriginal(store, operationId, claim, entry?.input) || communityReportOperationErasure(store, operationId) || notificationOperationErasure(store, operationId) || interactionOperationErasure(store, operationId) || commentOperationErasure(store, operationId) || commentCancellation(store, operationId) ? null : { operationId, tool: claim.tool,
       requestSha256: claim.requestSha256, status: 'prewrite_incomplete', preparedAt: null };
   }).filter(Boolean);
   needGoal(rows.length <= GOAL_PLUGIN_LIMITS.pending, 'STAGING_LIMIT'); return rows;
@@ -444,9 +695,25 @@ export function markGoalUnknown(row, now) {
   durableGoalJson(join(row.path, 'status.json'), state); row.state = state;
 }
 export function completeGoalOperation(store, row, receipt, now) {
-  assertGoalWritable(store, row.entry.input);
   const tool = goalTool(row.entry.tool);
-  if (tool.contract === GOAL_NETWORK_REPORT_CONTRACT) {
+  const comment = tool.contract === GOAL_COMMUNITY_COMMENT_CONTRACT;
+  if (comment) needGoal(tool.valid('cancel', receipt, row.entry.input), 'RECEIPT_INVALID');
+  assertGoalWritable(store, row.entry.input, comment && receipt.status === 'cancelled');
+  if (comment) { /* create/cancel share one immutable metadata-only terminal. */ }
+  else if (tool.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT) {
+    if (!validInteractionCore(receipt, row.entry.input)) {
+      needGoal(tool.valid(tool.action, receipt, row.entry.input), 'RECEIPT_INVALID');
+      receipt = receipt.receipt;
+    }
+    needGoal(validInteractionCore(receipt, row.entry.input), 'RECEIPT_INVALID');
+  } else if (tool.contract === GOAL_COMMUNITY_CONTRACT) {
+    // Archive the immutable original fact, never current source visibility.
+    if (!validCommunityCore(receipt, row.entry.input)) {
+      needGoal(tool.valid(tool.action, receipt, row.entry.input), 'RECEIPT_INVALID');
+      receipt = receipt.receipt;
+    }
+    needGoal(validCommunityCore(receipt, row.entry.input), 'RECEIPT_INVALID');
+  } else if (tool.contract === GOAL_NETWORK_REPORT_CONTRACT) {
     // Only the immutable acceptance fact is archived; current handling state is read separately.
     if (!validReportCore(receipt, row.entry.input)) {
       needGoal(tool.valid(tool.action, receipt, row.entry.input), 'RECEIPT_INVALID');
@@ -477,9 +744,9 @@ export function completeGoalOperation(store, row, receipt, now) {
   const comparable = value => tool.contract === GOAL_TASK_CONTRACT && tool.action === 'reserve'
     ? { ...value, creationDisposition: 'reconcile_only' } : value;
   const receiptSha256 = teachingRequestSha256(comparable(receipt));
-  if (tool.contract === GOAL_TASK_CONTRACT || tool.contract === GOAL_NETWORK_CONTRACT || tool.contract === GOAL_NETWORK_SCOPE_CONTRACT || tool.contract === GOAL_NETWORK_REPORT_CONTRACT) {
+  if (comment || tool.contract === GOAL_COMMUNITY_REPORT_CONTRACT || tool.contract === GOAL_COMMUNITY_NOTIFICATION_CONTRACT || tool.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT || tool.contract === GOAL_COMMUNITY_CONTRACT || tool.contract === GOAL_FINALIZATION_CONTRACT || tool.contract === GOAL_TASK_CONTRACT || tool.contract === GOAL_NETWORK_CONTRACT || tool.contract === GOAL_NETWORK_SCOPE_CONTRACT || tool.contract === GOAL_NETWORK_REPORT_CONTRACT) {
     const path = join(row.path, 'receipt.json'), first = readGoalJson(path, null);
-    if (first !== null) needGoal((tool.contract === GOAL_NETWORK_CONTRACT || tool.contract === GOAL_NETWORK_SCOPE_CONTRACT && validScopeCore(first, row.entry.input) || tool.contract === GOAL_NETWORK_REPORT_CONTRACT && validReportCore(first, row.entry.input) || tool.valid(tool.action, first, row.entry.input))
+    if (first !== null) needGoal((comment && tool.valid('cancel', first, row.entry.input) || tool.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT && validInteractionCore(first, row.entry.input) || tool.contract === GOAL_COMMUNITY_CONTRACT && validCommunityCore(first, row.entry.input) || tool.contract === GOAL_NETWORK_CONTRACT || tool.contract === GOAL_NETWORK_SCOPE_CONTRACT && validScopeCore(first, row.entry.input) || tool.contract === GOAL_NETWORK_REPORT_CONTRACT && validReportCore(first, row.entry.input) || tool.valid(tool.action, first, row.entry.input))
       && sameGoalValue(comparable(first), comparable(receipt)), 'RECEIPT_CONFLICT');
     // Keep the first observed receipt intact, including fresh when actually
     // observed. A late Post or operation query never overwrites this evidence.
@@ -556,8 +823,8 @@ export async function prepareGoalRequest({ tool: name, subject, semanticInput })
   const tool = goalTool(name); needGoal(tool.write, 'WRITE_TOOL_REQUIRED');
   const semantic = typeof semanticInput === 'string' ? parseTeachingJson(semanticInput, GOAL_PLUGIN_LIMITS.fileBytes) : structuredClone(semanticInput);
   needGoal(object(semantic) && !Object.hasOwn(semantic, 'operationId') && !Object.hasOwn(semantic, 'expectedAccountSubject'), 'SEMANTIC_INPUT_INVALID');
-  const contract = name === 'aidesk_goal_service_cooperate' && Object.hasOwn(semantic, 'contract') ? semantic.contract : tool.contract;
-  needGoal(name === 'aidesk_goal_service_cooperate' ? serviceContract(contract) : contract === tool.contract, 'SEMANTIC_INPUT_INVALID');
+  const contract = versionedOriginal(name) && Object.hasOwn(semantic, 'contract') ? semantic.contract : tool.contract;
+  needGoal(versionedOriginal(name) ? originalContract(name, contract) : contract === tool.contract, 'SEMANTIC_INPUT_INVALID');
   if (Object.hasOwn(semantic, 'contract')) needGoal(semantic.contract === contract, 'SEMANTIC_INPUT_INVALID');
   if (name === 'aidesk_goal_draft_save' && !Object.hasOwn(semantic, 'goalId')) {
     needGoal(semantic.expectedVersion === 0, 'EXISTING_GOAL_ID_REQUIRED'); semantic.goalId = randomUUID();
@@ -568,6 +835,7 @@ export async function prepareGoalRequest({ tool: name, subject, semanticInput })
   if (name === 'aidesk_goal_network_publish' && !Object.hasOwn(semantic, 'postId')) {
     needGoal(semantic.expectedVersion === 0, 'EXISTING_POST_ID_REQUIRED'); semantic.postId = randomUUID();
   }
+  if (name === 'aidesk_goal_community_comment_create' && !Object.hasOwn(semantic, 'commentId')) semantic.commentId = randomUUID();
   if (name === 'aidesk_goal_network_respond' && !Object.hasOwn(semantic, 'responseId')) semantic.responseId = randomUUID();
   if (name === 'aidesk_goal_network_scope_invite' && !Object.hasOwn(semantic, 'cohortId')) semantic.cohortId = randomUUID();
   if (name === 'aidesk_goal_network_scope_request' && !Object.hasOwn(semantic, 'requestId')) semantic.requestId = randomUUID();
@@ -629,6 +897,43 @@ export async function recoverGoalRequest({ operationId, subject, dataRoot, retry
         operationId: deleted.receipt.operationId, requestSha256: deleted.receipt.requestSha256 }, subject),
       status: 'deleted', originalOperation: { operationId, tool: deleted.tool, requestSha256: deleted.requestSha256 } };
     }
+    const reportErased = communityReportOperationErasure(store, operationId);
+    if (reportErased) {
+      needGoal(!retry && !cancel, 'COMMUNITY_REPORT_ORIGINAL_ERASED');
+      return { tool: 'aidesk_goal_community_report_operation', input: withExpectedGoalAccount({ contract: GOAL_COMMUNITY_REPORT_CONTRACT,
+        action: 'operation', operationId, requestSha256: reportErased.requestSha256 }, subject), status: 'erased',
+      dataPreview: { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_NETWORK_DELETE_V5_CONTRACT, target: reportErased.target }, subject) } };
+    }
+    const notificationErased = notificationOperationErasure(store, operationId);
+    if (notificationErased) {
+      needGoal(!retry && !cancel, 'NOTIFICATION_ORIGINAL_ERASED');
+      return { tool: 'aidesk_goal_community_notification_operation', input: withExpectedGoalAccount({ contract: GOAL_COMMUNITY_NOTIFICATION_CONTRACT,
+        action: 'operation', operationId, requestSha256: notificationErased.requestSha256 }, subject), status: 'erased',
+      dataPreview: { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_NETWORK_DELETE_V4_CONTRACT, target: notificationErased.target }, subject) } };
+    }
+    const commentErased = commentOperationErasure(store, operationId);
+    if (commentErased) {
+      needGoal(!retry && !cancel, 'COMMENT_ORIGINAL_ERASED');
+      return { tool: 'aidesk_goal_community_comment_operation', input: withExpectedGoalAccount({ contract: GOAL_COMMUNITY_COMMENT_CONTRACT,
+        operationId, requestSha256: commentErased.requestSha256 }, subject), status: 'erased',
+      dataPreview: { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_NETWORK_DELETE_V3_CONTRACT, target: commentErased.target }, subject) } };
+    }
+    const commentCancelled = commentCancellation(store, operationId);
+    if (commentCancelled) {
+      needGoal(!retry && !cancel, 'COMMENT_OPERATION_CANCELLED');
+      return { tool: 'aidesk_goal_community_comment_operation', input: withExpectedGoalAccount({ contract: GOAL_COMMUNITY_COMMENT_CONTRACT,
+        operationId, requestSha256: commentCancelled.requestSha256 }, subject), status: 'cancelled' };
+    }
+    const erased = interactionOperationErasure(store, operationId);
+    if (erased) {
+      needGoal(!retry && !cancel, 'INTERACTION_ORIGINAL_ERASED');
+      const target = erased.target;
+      return { tool: 'aidesk_goal_community_interaction_operation', input: withExpectedGoalAccount({ contract: GOAL_COMMUNITY_INTERACTION_CONTRACT,
+        action: 'operation', operationId, requestSha256: erased.requestSha256 }, subject), status: 'erased',
+      dataPreview: target.kind === 'goal'
+        ? { tool: 'aidesk_goal_data_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_DATA_DELETE_V3_CONTRACT, goalId: target.goalId }, subject) }
+        : { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_NETWORK_DELETE_V2_CONTRACT, target }, subject) } };
+    }
     let row;
     try { row = loadGoalOperation(store, operationId); }
     catch (error) {
@@ -648,12 +953,22 @@ export async function recoverGoalRequest({ operationId, subject, dataRoot, retry
       }
     }
     const { entry, state } = row, tool = goalTool(entry.tool);
-    const deletion = goalDeletionState(store, localGoalId(entry.input)) ?? networkDeletionState(store, localNetworkTarget(entry.input));
+    // For reporter submits, the validated immutable claim's operation ID is
+    // itself the exact report target even before request publication. This
+    // permits only deletion readback, never reconstructing or replaying P.
+    const recoveryNetworkTarget = localNetworkTarget(entry.input) ?? (entry.tool === 'aidesk_goal_community_report_submit'
+      ? { kind: 'community_report', reportId: operationId } : null);
+    const deletion = goalDeletionState(store, localGoalId(entry.input)) ?? commentGoalDeletionState(store, entry.input) ?? networkDeletionState(store, recoveryNetworkTarget);
     if (deletion?.status === 'deleted') {
       needGoal(!retry && !cancel, 'GOAL_DELETED');
       return { tool: deletionToolPrefix(deletion.receipt.contract) + '_operation', input: withExpectedGoalAccount({ contract: deletion.receipt.contract,
         operationId: deletion.receipt.operationId, requestSha256: deletion.receipt.requestSha256 }, subject),
       status: 'deleted', originalOperation: { operationId, tool: entry.tool, requestSha256: entry.requestSha256 } };
+    }
+    if (cancel && tool.contract === GOAL_COMMUNITY_COMMENT_CONTRACT) {
+      needGoal(entry.input, 'COMMENT_ORIGINAL_REQUIRED');
+      return { tool: 'aidesk_goal_community_comment_cancel', input: withExpectedGoalAccount(tool.parse('cancel', entry.input), subject),
+        requestSha256: entry.requestSha256, status: state.status };
     }
     if (cancel) {
       needGoal(deletionContract(tool.contract) && entry.input, 'DELETE_ORIGINAL_REQUIRED');
@@ -670,12 +985,11 @@ export async function recoverGoalRequest({ operationId, subject, dataRoot, retry
     // The immutable request is authoritative; a new thin service claim also
     // records the version before request publication. Old unversioned thin
     // claims cannot prove v1: the existing Hook already accepted both versions.
-    const contract = entry.tool === 'aidesk_goal_service_cooperate' ? entry.input?.contract ?? entry.contract : tool.contract;
-    needGoal(entry.tool !== 'aidesk_goal_service_cooperate' || serviceContract(contract), 'ORIGINAL_CONTRACT_UNKNOWN');
-    return { tool: tool.operationTool, input: withExpectedGoalAccount(tool.parse('operation', { contract, ...([GOAL_NETWORK_CONTRACT, GOAL_NETWORK_SCOPE_CONTRACT].includes(tool.contract) ? { action: 'operation' } : {}), operationId, requestSha256: entry.requestSha256 }), subject),
+    const contract = recoveredContract(entry);
+    return { tool: tool.operationTool, input: withExpectedGoalAccount(tool.parse('operation', { contract, ...([GOAL_COMMUNITY_REPORT_CONTRACT, GOAL_COMMUNITY_NOTIFICATION_CONTRACT, GOAL_COMMUNITY_INTERACTION_CONTRACT, GOAL_COMMUNITY_CONTRACT, GOAL_NETWORK_CONTRACT, GOAL_NETWORK_SCOPE_CONTRACT].includes(tool.contract) ? { action: 'operation' } : {}), operationId, requestSha256: entry.requestSha256 }), subject),
       requestSha256: entry.requestSha256, status: state.status,
-      ...(localNetworkTarget(entry.input) ? { ifNotFound: { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_NETWORK_DELETE_CONTRACT, target: localNetworkTarget(entry.input) }, subject) } } : {}),
-      ...(localGoalId(entry.input) ? { ifNotFound: { tool: 'aidesk_goal_data_delete_preview', input: withExpectedGoalAccount({ contract: GOAL_DATA_DELETE_CONTRACT, goalId: localGoalId(entry.input) }, subject) } } : {}) };
+      ...(recoveryNetworkTarget ? { ifNotFound: { tool: 'aidesk_goal_network_delete_preview', input: withExpectedGoalAccount({ contract: recoveryNetworkTarget.kind === 'community_report' ? GOAL_NETWORK_DELETE_V5_CONTRACT : ['community_notification', 'community_notification_settings'].includes(recoveryNetworkTarget.kind) ? GOAL_NETWORK_DELETE_V4_CONTRACT : recoveryNetworkTarget.kind === 'community_comment' ? GOAL_NETWORK_DELETE_V3_CONTRACT : recoveryNetworkTarget.kind === 'community_relationships' ? GOAL_NETWORK_DELETE_V2_CONTRACT : GOAL_NETWORK_DELETE_CONTRACT, target: recoveryNetworkTarget }, subject) } } : {}),
+      ...(localGoalId(entry.input) ? { ifNotFound: { tool: 'aidesk_goal_data_delete_preview', input: withExpectedGoalAccount({ contract: entry.input?.contract === GOAL_DATA_DELETE_V5_CONTRACT ? GOAL_DATA_DELETE_V5_CONTRACT : entry.input?.contract === GOAL_DATA_DELETE_V4_CONTRACT ? GOAL_DATA_DELETE_V4_CONTRACT : entry.input?.contract === GOAL_COMMUNITY_INTERACTION_CONTRACT || entry.input?.contract === GOAL_DATA_DELETE_V3_CONTRACT ? GOAL_DATA_DELETE_V3_CONTRACT : entry.input?.contract === GOAL_COMMUNITY_CONTRACT || entry.input?.contract === GOAL_DATA_DELETE_V2_CONTRACT ? GOAL_DATA_DELETE_V2_CONTRACT : GOAL_DATA_DELETE_CONTRACT, goalId: localGoalId(entry.input) }, subject) } } : {}) };
   });
 }
 export async function pendingGoalRequests({ subject, dataRoot, afterOperationId = null, limit = GOAL_PLUGIN_LIMITS.list }) {

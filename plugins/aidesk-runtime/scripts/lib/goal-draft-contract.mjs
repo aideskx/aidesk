@@ -1,4 +1,4 @@
-// Generated from services/authority-api/src/goal-draft-contract.ts; source SHA-256 a5caa90c6a0eb84dcd22983170f6aa71246e59a1cbfe4fa04adf12783d558c49.
+// Generated from services/authority-api/src/goal-draft-contract.ts; source SHA-256 4e2f9548988532e4e22c539dd09200728eac57f091f07b706976cd641e4b5a5d.
 // Run node tooling/build-plugin-runtime.mjs; do not edit this copy.
 import { isTimestamp, isUuid } from "./domain-inputs.mjs";
 import { canonicalTeachingJson, parseTeachingJson, teachingObject, teachingRequestSha256 } from "./teaching-business-contract.mjs";
@@ -6,6 +6,8 @@ import { canonicalTeachingJson, parseTeachingJson, teachingObject, teachingReque
  * goal IDs/revisions belong to the goal owner and must survive later acceptance;
  * draft is this slice's capability boundary, never a required user mode. */
 export const GOAL_DRAFT_CONTRACT = "aidesk-goal-draft-v1";
+/** V2 creation is recorded by SQL; the editable body remains a draft. */
+export const GOAL_DRAFT_V2_CONTRACT = "aidesk-goal-draft-v2";
 export const GOAL_DRAFT_LIMITS = Object.freeze({ requestBytes: 12288, transportBytes: 32768, minBudget: 1024, maxBudget: 24576 });
 export class GoalDraftError extends Error {
     kind;
@@ -26,6 +28,7 @@ const text = (v, max) => typeof v === "string" && v.isWellFormed() && v.trim().l
     && !/[\p{Cc}]/u.test(v) && Buffer.byteLength(v) <= max;
 const uuid = (v) => isUuid(v) && v === v.toLowerCase();
 const hash = (v) => typeof v === "string" && /^[a-f0-9]{64}$/u.test(v);
+const draftContract = (v) => v === GOAL_DRAFT_CONTRACT || v === GOAL_DRAFT_V2_CONTRACT;
 const contentKeys = ["objective", "expectedResult", "constraints", "materials", "revisionReason"];
 function content(v) {
     return text(v.objective, 2048) && text(v.expectedResult, 2048) && Array.isArray(v.constraints) && v.constraints.length <= 8
@@ -46,7 +49,7 @@ export function parseGoalDraftInput(action, value) {
         throw e instanceof GoalDraftError ? e : new GoalDraftError("invalid_input");
     }
     let valid = false;
-    if (teachingObject(v) && v.contract === GOAL_DRAFT_CONTRACT) {
+    if (teachingObject(v) && draftContract(v.contract)) {
         if (action === "save")
             valid = exact(v, ["contract", "operationId", "goalId", "expectedVersion", ...contentKeys])
                 && uuid(v.operationId) && uuid(v.goalId) && integer(v.expectedVersion, 0, 2147483646) && content(v);
@@ -68,15 +71,15 @@ function goal(v) {
         && v.status === "draft" && isTimestamp(v.updatedAt) && content(v);
 }
 function receipt(v, operationId, digest) {
-    if (!(exact(v, ["contract", "status", "operationId", "requestSha256", "goal"]) && v.contract === GOAL_DRAFT_CONTRACT
+    if (!(exact(v, ["contract", "status", "operationId", "requestSha256", "goal"]) && draftContract(v.contract)
         && v.status === "saved" && v.operationId === operationId && v.requestSha256 === digest && goal(v.goal)))
         return false;
     const g = v.goal;
-    return teachingRequestSha256({ contract: GOAL_DRAFT_CONTRACT, operationId, goalId: g.goalId, expectedVersion: g.version - 1,
+    return teachingRequestSha256({ contract: v.contract, operationId, goalId: g.goalId, expectedVersion: g.version - 1,
         objective: g.objective, expectedResult: g.expectedResult, constraints: g.constraints, materials: g.materials, revisionReason: g.revisionReason }) === digest;
 }
 export function validGoalDraftResult(action, v, input) {
-    if (!teachingObject(v) || v.contract !== GOAL_DRAFT_CONTRACT)
+    if (!teachingObject(v) || !draftContract(v.contract) || v.contract !== input.contract)
         return false;
     if (action === "save") {
         const p = input;
@@ -88,7 +91,7 @@ export function validGoalDraftResult(action, v, input) {
         return v.operationId === p.operationId && v.requestSha256 === p.requestSha256
             && (v.status === "not_found" && exact(v, ["contract", "status", "terminal", "operationId", "requestSha256"]) && v.terminal === false
                 || v.status === "completed" && exact(v, ["contract", "status", "terminal", "operationId", "requestSha256", "receipt"])
-                    && v.terminal === true && receipt(v.receipt, p.operationId, p.requestSha256));
+                    && v.terminal === true && receipt(v.receipt, p.operationId, p.requestSha256) && v.receipt.contract === p.contract);
     }
     const p = input;
     if (Buffer.byteLength(canonicalTeachingJson(v)) > p.budgetBytes)
@@ -131,3 +134,15 @@ export const goalDraftToolDefinitions = [
         inputSchema: obj({ ...base, operationId: id, requestSha256: { type: "string", pattern: "^[a-f0-9]{64}$" } }),
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
 ];
+/** Only the new catalog advertises both contracts. Keep the legacy definition
+ * objects and descriptions unchanged so their pagination identity is stable. */
+export const goalDraftV2ToolDefinitions = goalDraftToolDefinitions.map(tool => {
+    const inputSchema = structuredClone(tool.inputSchema);
+    const contract = { type: "string", enum: [GOAL_DRAFT_CONTRACT, GOAL_DRAFT_V2_CONTRACT] };
+    if ("oneOf" in inputSchema)
+        for (const variant of inputSchema.oneOf)
+            variant.properties.contract = contract;
+    else
+        inputSchema.properties.contract = contract;
+    return { ...tool, inputSchema };
+});
