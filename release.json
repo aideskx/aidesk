@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260927102138",
+  "latestVersion": "0.3.2+codex.20260929040838",
   "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "ec55c8122adff8857de282c6d5af56657f0b7171deba11b1f8e53d2ea903dc6f",
-  "publishedAt": "2026-09-27T11:28:12.880Z",
-  "notes": "102138：同一Plugin内按需读取一个Skill的核心与五份说明，统一版本整包更新。补充导出冲突原因待核，不推定连接故障、不降级。运行脚本、Hook、更新器与服务合同保持。修复源verify4,889通过/1可选探针未执行；独立79项及18个合成回合通过。目标读取中位耗时比082659慢7.78%，样本小、缓存未控，不承诺通用提速。本机开发源入口有限通过；稳定源真实安装/自动更新、双机及既有宿主未验边界保留，社区尚未开放，不称完整V2.2通过。"
+  "packageDigest": "d4e8e35def902b092e53eac322e9c754bb99f89ca65d6f6fed47f4ce7401c40d",
+  "publishedAt": "2026-09-29T04:36:44.942Z",
+  "notes": "040838本地候选：同一Plugin说明对齐当前账号查看自己的目标、进展、过程和文本成果；旧熟人分享按配套服务退役，公共社区独立。无上传、文件库、文件预览或新增文件功能。运行脚本、Hook、连接地址与原生工件保持。候选包静态核验通过；实际安装、新连接、配套服务和网页本人路径及D4最终验收待核。未公开，须用户确认准确候选后才推送。"
 }

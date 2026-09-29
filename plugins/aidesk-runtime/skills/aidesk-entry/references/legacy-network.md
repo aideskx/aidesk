@@ -10,7 +10,7 @@
 
 本人想找回以前发表的帖子或回应、却没有准确编号时，分别用`aidesk_goal_network_discover(view:own_posts)`或`view:own_responses`，从`after:null`开始，按实际`nextAfter:{cohortId,id}`续页；这两种本人历史查询不先要求当前共享范围，不传顶层cohortId、authorId、query或operationId，也不prepare或保存新原号。摘要只含本人帖子最新修订或本人回应及其准确来源版本；`status`是本人记录是否撤回，`sourceStatus`是当前来源状态，均不授予他人正文权限。选定后复用原read，传回实际cohortId／postId／version及回应id；正文读取仍沿现有原件与Hook处理。关闭范围、退出、撤回或权益到期不抹去本人历史，停用账号仍拒绝。分页是当前按复合编号排序的有界发现，不是全修订导出或跨次原子快照；有新发表或修订时从首页重查，部分页不称完整历史。
 
-当前开发范围资格可来自已准备且有效的可信平台归属账号，或原合成测试资格；订阅本身不授予共享范围，未购也可以明确约定合成范围。需要建立新的合成双人范围时，沿同一账号使用`aidesk_goal_network_scope_invite`创建邀请，保存实际返回的cohortId供对方明确选择；邀请引用本身不授予内容权限，也不代表已发送消息。对方明确申请时用`aidesk_goal_network_scope_request`，再用`aidesk_goal_network_scope_read`读取实际请求及服务生成的participantId。邀请者与对方核对同一requestId／participantId并明确接受后，邀请者才用`aidesk_goal_network_scope_accept`提交准确请求、participantId和读回版本；未接受、已退出或过期都不能当已入群。新邀范围用`aidesk_goal_network_discover(view:scopes,purpose:synthetic-invited-pair)`查找；purpose只用于scopes，不传posts／responses，切换purpose从afterId:null重新分页。省略purpose仍查原合成范围，两种分页不混作完整范围。scope_read的contentAvailable和范围发现只提示当前状态，正文操作仍逐次核权；操作回执不替代当前权限。用户明确退出时用`aidesk_goal_network_scope_leave`提交实际版本，成功后该双人范围关闭；既有本人历史和合法采用副本沿原读取合同处理，不承诺删除他人副本。不自动邀请、代另一账号接受或扩大为真实资料开放。
+旧`synthetic-invited-pair`邀请范围已退役：不再创建邀请、申请或接受，也不再读取对方私人正文。旧链接、邀请引用、接受关系和原号不恢复权限；不得尝试用其他工具或回执重开。需要核对旧范围时仅用`aidesk_goal_network_scope_read`查看必要元数据；用户明确退出时，沿实际读回版本调用`aidesk_goal_network_scope_leave`。已有原号只作元数据对账，本人历史、合法采用副本、撤回和删除沿原权限保留。独立的`synthetic-two-user-prototype`合成范围仍按当前服务资格处理；下文发现、发表、采用、回应和他人正文说明只适用于仍有效且获准的该范围。正式公共社区使用其独立工具和同包说明，不受旧邀请退役影响。
 
 查找摘要可用于整理，不启动试用。用户要求查看另一用户原件时用`aidesk_goal_network_read`，明确post／response、准确源帖版本及必要responseId。全文属于正式书桌服务，按现有用户要求开展并采用实际受理回执；旧首次资格才开始同一连续7天窗口，旧年度按实际年度期限说明；平台归属按实际平台订阅期限，不开始旧试用，不再加确认。本人帖子／回应历史、已采用副本及原号元数据对账不重新受理。
 
@@ -26,7 +26,7 @@
 
 ## 旧网络写入的业务字段
 
-网络写入按工具schema提供准确action、范围、版本和本次所选内容；新发表用expectedVersion=0并省略postId，新回应省略responseId，新采用省略adoptionId，由同次prepare生成；已有实体更新必须保留准确ID。共享范围四个写动作也由此helper准备：invite省略cohortId时生成新邀请引用，request省略requestId时生成新申请号；accept的requestId、participantId及版本、leave的版本均沿实际read结果，不生成或猜测。scope_read／scope_operation、discover和本人adoption副本读不prepare。
+网络写入按工具schema提供准确action、范围、版本和本次所选内容；新发表用expectedVersion=0并省略postId，新回应省略responseId，新采用省略adoptionId，由同次prepare生成；已有实体更新必须保留准确ID。旧邀请范围仅保留leave必要退出写入，由此helper准备，版本沿实际read结果，不生成或猜测；不prepare新的invite／request／accept。scope_read／scope_operation、discover和本人adoption副本读不prepare。
 
 ## 共享全文与原号回执
 

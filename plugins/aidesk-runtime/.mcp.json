@@ -5,7 +5,7 @@
       "url": "https://aideskx.com/mcp",
       "http_headers": {
         "X-Aidesk-Goal-Catalog": "goal-community-v7",
-        "X-Aidesk-Plugin-Version": "0.3.2+codex.20260927102138",
+        "X-Aidesk-Plugin-Version": "0.3.2+codex.20260929040838",
         "X-Aidesk-Network-Reports": "v1",
         "X-Aidesk-Goal-Recent": "v1"
       }
