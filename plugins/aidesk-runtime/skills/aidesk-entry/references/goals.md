@@ -11,3 +11,7 @@
 正式开展使用 `aidesk-goal-service-v2`，长期目标绑定准确的 `goalId` 与版本。结果未知只用原操作号和原摘要查询，不换号重试。只有服务任务预留返回 `creationDisposition:fresh` 时，才允许按用户明确意图创建一次宿主任务；保留宿主真实 `hostId`、`threadId` 或 `clientThreadId`，不猜编号。
 
 目标任务记录应分开保存创建、分享决定、公开投影、送达、宿主观察和报告。服务回执、宿主观察和模型自报分别呈现；报告中的本地文件或摘要不等于服务终态或宿主可进入。
+
+取得真实任务报告后，结果回报使用 `aidesk_goal_result_record`，并绑定准确的 `goalId`、`goalVersion`、任务 `attemptId`、`reportId` 和结果正文中的来源、限制、成果位置及验证级别。结果服务只保存带来源的个人结果事实；记录成功不证明宿主确实执行、来源仍可访问或用户已经达成目标。结果写入未知时沿同一 `operationId` 调用 `aidesk_goal_result_operation` 对账，不能换号重放。
+
+读取使用 `aidesk_goal_result_read`，按真实结果 ID／版本或有界列表继续分页；发现事实错误时先读当前版本，再以 `expectedVersion` 调用 `aidesk_goal_result_correct` 新增更正版本，保留旧版本和来源关系。更正、导出、删除和宿主任务状态分别报告，不把结果服务回执写成任务完成或能力证明。

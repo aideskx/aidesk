@@ -10,6 +10,9 @@ export const WRITE_TOOLS = new Set([
   'aidesk_goal_community_comment_cancel', 'aidesk_goal_community_notification_mark_read',
   'aidesk_goal_community_notification_mute_set', 'aidesk_goal_community_notification_proactive_set',
   'aidesk_goal_community_report_submit', 'aidesk_goal_data_delete',
+  // Result records are durable writes owned by the goal/result contract. They
+  // must enter the same operation ledger as goal and community mutations.
+  'aidesk_goal_result_record', 'aidesk_goal_result_correct',
   'aidesk_goal_network_delete', 'aidesk_goal_data_delete_cancel',
   'aidesk_goal_network_delete_cancel',
   'aidesk_goal_network_withdraw',
@@ -33,6 +36,7 @@ export const READ_TOOLS = new Set([
   'aidesk_goal_network_scope_read', 'aidesk_goal_network_scope_operation',
   'aidesk_goal_network_delete_preview', 'aidesk_goal_network_delete_operation',
   'aidesk_goal_network_report_operation', 'aidesk_goal_network_report_status',
+  'aidesk_goal_result_read', 'aidesk_goal_result_operation',
   // P1-03 community interaction reads. These are explicit read contracts so
   // the lifecycle Hook can observe the complete community surface without
   // treating existing MCP capabilities as unknown tools.

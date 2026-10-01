@@ -306,10 +306,18 @@ export async function updatePlugin({ packageRoot = PACKAGE_ROOT, inventory, read
   const fresh = inspectInstallation(await inventory());
   if (fresh.error || fresh.version !== before.version || fresh.sourcePath !== before.sourcePath) return { ...target, installedVersion: fresh.version ?? null, status: 'unknown', changed: null, reason: fresh.error ?? 'installed_version_changed' };
   try { const currentSource = await readSource(); if (currentSource.ref !== null && currentSource.ref !== 'main') return { ...target, status: 'unknown', changed: false, reason: 'pinned_source' }; } catch { return { ...target, status: 'unknown', changed: false, reason: 'marketplace_source_unavailable' }; }
+  const structuredCommandError = outcome => object(outcome) && Array.isArray(outcome.errors) && outcome.errors.length > 0
+    ? new Error('host_command_failed') : null;
   let commandError = null;
-  try { await command(codex, ['plugin', 'marketplace', 'upgrade', MARKETPLACE, '--json'], 120_000); } catch (error) { commandError = error; }
+  try {
+    const outcome = await command(codex, ['plugin', 'marketplace', 'upgrade', MARKETPLACE, '--json'], 120_000);
+    const structuredError = structuredCommandError(outcome);
+    if (structuredError) commandError = structuredError;
+  } catch (error) { commandError = error; }
   let after;
   try { after = inspectInstallation(await inventory()); } catch { return { ...target, status: 'unknown', changed: null, reason: 'readback_failed' }; }
+  if (after.error || after.sourcePath !== before.sourcePath)
+    return { ...target, installedVersion: after.version ?? null, status: 'unknown', changed: null, reason: after.error ?? 'source_changed' };
   const packageRootFor = version => {
     if (!validVersion(version)) return null;
     const root = resolve(dirname(packageRoot), version);
@@ -326,12 +334,15 @@ export async function updatePlugin({ packageRoot = PACKAGE_ROOT, inventory, read
     if (commandError?.indeterminate) return { ...target, installedVersion: after.version ?? null, status: 'unknown', changed: null, reason: 'host_command_timeout' };
     try {
       const currentSource = await readSource(); if (currentSource.ref !== null && currentSource.ref !== 'main') return { ...target, installedVersion: after.version ?? null, status: 'unknown', changed: null, reason: 'pinned_source' };
-      await command(codex, ['plugin', 'add', ID, '--json'], 120_000);
+      const outcome = await command(codex, ['plugin', 'add', ID, '--json'], 120_000);
+      commandError ??= structuredCommandError(outcome);
     } catch (error) {
       try { after = inspectInstallation(await inventory()); } catch { return { ...target, status: 'unknown', changed: null, reason: 'readback_failed' }; }
       if (error?.indeterminate) return { ...target, installedVersion: after.version ?? null, status: 'unknown', changed: null, reason: 'host_command_timeout' };
     }
     try { after = inspectInstallation(await inventory()); } catch { return { ...target, status: 'unknown', changed: null, reason: 'readback_failed' }; }
+    if (after.error || after.sourcePath !== before.sourcePath)
+      return { ...target, installedVersion: after.version ?? null, status: 'unknown', changed: null, reason: after.error ?? 'source_changed' };
   }
   if (!(await checkInstalled())) return { ...target, installedVersion: after.version ?? null, status: 'failed', changed: after.version !== before.version, reason: commandError?.message ?? 'package_verification_failed' };
   return { ...target, installedVersion: after.version, status: 'installed_pending_activation', changed: true, commandReportedError: commandError !== null };
