@@ -20,7 +20,10 @@ export function assertEnvelope(input, { write = true } = {}) {
 }
 
 export function requestDigest(input) {
-  const body = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestSha256'));
+  // expectedAccountSubject is a host transport assertion. The authority
+  // server removes it before dispatching the business request, so it must not
+  // participate in the request identity used by receipts/idempotency.
+  const body = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestSha256' && key !== 'expectedAccountSubject'));
   return sha256(canonical(body));
 }
 

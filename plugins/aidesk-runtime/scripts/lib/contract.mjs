@@ -12,6 +12,7 @@ export const WRITE_TOOLS = new Set([
   'aidesk_goal_community_report_submit', 'aidesk_goal_data_delete',
   'aidesk_goal_network_delete', 'aidesk_goal_data_delete_cancel',
   'aidesk_goal_network_delete_cancel',
+  'aidesk_goal_network_withdraw',
 ]);
 
 export const READ_TOOLS = new Set([

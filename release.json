@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.3+codex.20261001055124",
-  "minimumSupportedVersion": "1.0.3+codex.20261001055124",
-  "packageDigest": "c0e6334ba97aa84e2de16c5d7fc93a942537c2cea2b12686bb3b49525d558395",
-  "publishedAt": "2026-10-01T05:51:24Z",
-  "notes": "CLI-native AI书桌新版：补齐核心恢复、社区互动合同与本机数据权利，并记录 Post 回执摘要；不沿用旧版兼容。"
+  "latestVersion": "1.0.4+codex.20261001103924",
+  "minimumSupportedVersion": "1.0.4+codex.20261001103924",
+  "packageDigest": "4de857d4a0cd540eeea5173a626100743a657be7799a15381af0c9e9f71e9f53",
+  "publishedAt": "2026-10-01T10:39:24Z",
+  "notes": "CLI-native AI书桌新版：自动更新、Hook 账本一致性、自然入口与数据权利边界已补齐；仍需完成宿主真实激活和全链路业务验收。"
 }

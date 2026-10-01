@@ -139,8 +139,11 @@ async function appendRecoveryRecord(dataRoot, args, record) {
     await syncDirectory(dirname(path));
     return true;
   } finally {
-    if (handle) await handle.close();
-    await rm(lock, { force: true });
+    // Only the process that successfully created the lock owns it. In
+    // particular, an EEXIST failure must leave another writer's lock intact.
+    if (handle) {
+      try { await handle.close(); } finally { await rm(lock, { force: true }); }
+    }
   }
 }
 
@@ -179,7 +182,7 @@ async function recordPostObservation(dataRoot, tool, event, args) {
   const response = event.tool_response;
   const record = {
     phase: 'PostToolUse', tool, operationId: operationId(args),
-    accountSubjectSha256: sha256(args.expectedAccountSubject), requestSha256: sha256(args),
+    accountSubjectSha256: sha256(args.expectedAccountSubject), requestSha256: requestDigest(args),
     ...associationFromArgs(args),
     observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
     observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
@@ -358,7 +361,7 @@ if (phase === 'PreToolUse') {
     const record = {
       phase, tool, operationId: operationId(args),
       accountSubjectSha256: sha256(args.expectedAccountSubject),
-      requestSha256: sha256(args),
+      requestSha256: requestDigest(args),
       ...association,
       observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
       observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
