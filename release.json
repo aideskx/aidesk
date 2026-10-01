@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "0.3.2+codex.20260929040838",
-  "minimumSupportedVersion": "0.3.0",
-  "packageDigest": "d4e8e35def902b092e53eac322e9c754bb99f89ca65d6f6fed47f4ce7401c40d",
-  "publishedAt": "2026-09-29T04:36:44.942Z",
-  "notes": "040838分发内容，验收截至2026-09-29；实际发布状态以公开main和同提交元数据读回为准，publishedAt为包元数据时间。同包说明对齐本人目标、过程与文本成果，旧跨账号分享按服务退役；运行脚本、Hook与连接地址保持，无上传或文件预览。官方add及58文件磁盘核同，开发137/flag1、SQL001/002、45路由和静态四项已读回。正常OTP HTTP、Chrome四入口、隔离及原权益/退款保持通过。13:32—13:43上海补验：现有MCP识别040838，合成账号原身份和原suspended权益可读；后台正常登录以完整UID核同官网账号；正常退出后标签原生切回及历史返回清屏。更新比较unavailable原因未知，不证明最新版；13:34公开观察仍102138。新可见自然入口、物理手机/触控、稳定源新装自动更新、同版本双机/真人、BFCache persisted、完整多账号矩阵及无后续生命周期事件的持续可见窗口未验。"
+  "latestVersion": "1.0.0+codex.20261001000000",
+  "minimumSupportedVersion": "1.0.0+codex.20261001000000",
+  "packageDigest": "3d9fe37a9afb9f7ad82f50f4a65aa6657c3fc6fb0547e7e4f03280cd251ca7d7",
+  "publishedAt": "2026-10-01T00:00:00Z",
+  "notes": "CLI-native future plugin candidate: explicit host contract, domain references, recoverable real-service closure."
 }

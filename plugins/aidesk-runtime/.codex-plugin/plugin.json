@@ -1,20 +1,21 @@
 {
   "name": "aidesk-runtime",
-  "version": "0.3.2+codex.20260929040838",
-  "description": "\u7528\u672c\u4eba\u8d26\u53f7\u660e\u786e\u76ee\u6807\u3001\u63a8\u8fdb\u4efb\u52a1\u5e76\u8bb0\u5f55\u5fc5\u8981\u6210\u679c\uff0c\u65b9\u4fbf\u4ee5\u540e\u63a5\u7eed\u7684 AI\u4e66\u684c\u76ee\u6807 Plugin\u3002",
+  "version": "1.0.0+codex.20261001000000",
+  "description": "AI书桌未来版：CLI-native 目标协作、结果回报与可追踪恢复。",
   "author": {
-    "name": "AI\u4e66\u684c",
+    "name": "AI书桌",
     "url": "https://aideskx.com"
   },
   "homepage": "https://aideskx.com",
   "repository": "https://github.com/aideskx/aidesk",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
   "interface": {
-    "displayName": "AI\u4e66\u684c",
-    "shortDescription": "\u660e\u786e\u672c\u4eba\u76ee\u6807\uff0c\u63a8\u8fdb\u4efb\u52a1\uff0c\u8bb0\u5f55\u7ed3\u679c\u5e76\u7ee7\u7eed\u3002",
-    "longDescription": "AI\u4e66\u684c\u7684\u9996\u4e2a\u6838\u5fc3 Plugin\uff0c\u5e2e\u52a9\u5b69\u5b50\u548c\u5bb6\u957f\u4ece\u81ea\u5df1\u7684\u95ee\u9898\u6216\u60f3\u6cd5\u51fa\u53d1\uff0c\u6f84\u6e05\u76ee\u6807\u3001\u8854\u63a5\u72ec\u7acb\u4efb\u52a1\uff0c\u8bb0\u5f55\u5fc5\u8981\u8fdb\u5c55\u4e0e\u6210\u679c\uff0c\u65b9\u4fbf\u4ee5\u540e\u7ee7\u7eed\u3002\u76ee\u6807\u793e\u533a\u662f\u5e73\u53f0\u793e\u533a\u7684\u9996\u4e2a\u4e1a\u52a1\u573a\u666f\uff0c\u56f4\u7ed5\u76ee\u6807\u63d0\u4f9b\u53d1\u73b0\u3001\u5206\u4eab\u4e0e\u4ea4\u6d41\u7684\u5165\u53e3\u3002\u65b0\u6b63\u5f0f\u76ee\u6807\u9ed8\u8ba4\u5206\u4eab\u516c\u5f00\u4ecb\u7ecd\u548c\u9009\u5b9a\u7684\u5fc5\u8981\u8fdb\u5c55\uff0f\u6210\u679c\u6458\u8981\uff0c\u5b9a\u7a3f\u65f6\u5c55\u793a\u5185\u5bb9\u4e0e\u5f00\u5173\uff0c\u53ef\u5173\u95ed\uff1b\u8349\u7a3f\u4e0d\u516c\u5f00\uff0c\u65e7\u79c1\u4eba\u76ee\u6807\u4e0d\u81ea\u52a8\u516c\u5f00\u3002\u5f53\u524d\u4e3a\u5f00\u53d1\u5019\u9009\uff0c\u793e\u533a\u5c1a\u672a\u5f00\u653e\uff0c\u767b\u5f55\u540e\u7684\u76ee\u6807\u534f\u4f5c\u4e0e\u793e\u533a\u4f7f\u7528\u8def\u5f84\u4ecd\u5f85\u5b9e\u9645\u9a8c\u8bc1\u3002",
-    "developerName": "AI\u4e66\u684c",
+    "displayName": "AI书桌 Next",
+    "shortDescription": "从目标出发，推进任务，核对结果并继续行动。",
+    "longDescription": "AI书桌未来版使用当前宿主的 CLI-native Plugin 能力，连接本人账号和目标服务，分开报告服务状态、宿主任务和真实结果。",
+    "developerName": "AI书桌",
     "category": "Productivity",
     "websiteURL": "https://aideskx.com",
     "capabilities": [
@@ -22,7 +23,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "\u6253\u5f00AI\u4e66\u684c"
+      "打开AI书桌"
     ]
   }
 }
