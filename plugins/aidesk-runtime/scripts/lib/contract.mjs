@@ -4,7 +4,7 @@ export const WRITE_TOOLS = new Set([
   'aidesk_goal_draft_save', 'aidesk_goal_service_cooperate',
   'aidesk_goal_task_reserve', 'aidesk_goal_task_record',
   'aidesk_goal_finalization_finalize', 'aidesk_goal_share_preference_update',
-  'aidesk_goal_community_publish', 'aidesk_goal_community_close',
+  'aidesk_goal_community_publish', 'aidesk_goal_community_close', 'aidesk_goal_community_withdraw',
   'aidesk_goal_community_reopen', 'aidesk_goal_community_interaction_relation_set',
   'aidesk_goal_community_interaction_adopt', 'aidesk_goal_community_comment_create',
   'aidesk_goal_community_comment_cancel', 'aidesk_goal_community_notification_mark_read',
