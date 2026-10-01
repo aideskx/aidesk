@@ -10,14 +10,46 @@ export const WRITE_TOOLS = new Set([
   'aidesk_goal_community_comment_cancel', 'aidesk_goal_community_notification_mark_read',
   'aidesk_goal_community_notification_mute_set', 'aidesk_goal_community_notification_proactive_set',
   'aidesk_goal_community_report_submit', 'aidesk_goal_data_delete',
-  'aidesk_goal_network_delete',
+  'aidesk_goal_network_delete', 'aidesk_goal_data_delete_cancel',
+  'aidesk_goal_network_delete_cancel',
 ]);
 
 export const READ_TOOLS = new Set([
-  'aidesk_account_status', 'aidesk_check_plugin_update', 'aidesk_platform_subscription_read',
+  'aidesk_account_status', 'aidesk_check_plugin_update', 'aidesk_platform_account_prepare',
+  'aidesk_platform_subscription_read',
   'aidesk_goal_draft_read', 'aidesk_goal_task_read', 'aidesk_goal_finalization_read',
   'aidesk_goal_share_preference_read', 'aidesk_goal_community_state',
   'aidesk_goal_community_discover', 'aidesk_goal_community_read',
+  // Every operation/preview endpoint is a read of an existing write fact;
+  // blocking it would make the required unknown-result recovery path
+  // unreachable through the same CLI-native Hook.
+  'aidesk_goal_draft_operation', 'aidesk_goal_service_operation',
+  'aidesk_goal_task_operation', 'aidesk_goal_finalization_operation',
+  'aidesk_goal_share_preference_operation', 'aidesk_goal_community_operation',
+  'aidesk_goal_data_export', 'aidesk_goal_data_delete_preview',
+  'aidesk_goal_data_delete_operation', 'aidesk_goal_network_discover',
+  'aidesk_goal_network_read', 'aidesk_goal_network_operation',
+  'aidesk_goal_network_scope_read', 'aidesk_goal_network_scope_operation',
+  'aidesk_goal_network_delete_preview', 'aidesk_goal_network_delete_operation',
+  'aidesk_goal_network_report_operation', 'aidesk_goal_network_report_status',
+  // P1-03 community interaction reads. These are explicit read contracts so
+  // the lifecycle Hook can observe the complete community surface without
+  // treating existing MCP capabilities as unknown tools.
+  'aidesk_goal_community_interaction_adoptions',
+  'aidesk_goal_community_interaction_state',
+  'aidesk_goal_community_interaction_bookmarks',
+  'aidesk_goal_community_interaction_operation',
+  'aidesk_goal_community_comment_read',
+  'aidesk_goal_community_comment_thread',
+  'aidesk_goal_community_comment_own',
+  'aidesk_goal_community_comment_operation',
+  'aidesk_goal_community_notification_list',
+  'aidesk_goal_community_notification_read',
+  'aidesk_goal_community_notification_preferences',
+  'aidesk_goal_community_notification_operation',
+  'aidesk_goal_community_report_list',
+  'aidesk_goal_community_report_status',
+  'aidesk_goal_community_report_operation',
 ]);
 
 export function canonical(value) {
@@ -36,6 +68,14 @@ export function toolFromEvent(event) {
 }
 
 export function isWriteTool(tool) { return WRITE_TOOLS.has(tool); }
-export function isReadTool(tool) { return READ_TOOLS.has(tool) || Boolean(tool?.startsWith('aidesk_goal_')); }
+export function isReadTool(tool) { return READ_TOOLS.has(tool); }
+export function isKnownTool(tool) { return isWriteTool(tool) || isReadTool(tool); }
 
-export function operationId(input) { return typeof input?.operationId === 'string' && input.operationId.length > 0 ? input.operationId : null; }
+export function operationId(input) {
+  return typeof input?.operationId === 'string'
+    && input.operationId.length > 0
+    && input.operationId.length <= 200
+    && !/[\u0000\r\n]/u.test(input.operationId)
+    ? input.operationId
+    : null;
+}

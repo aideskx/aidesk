@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.0+codex.20261001000000",
-  "minimumSupportedVersion": "1.0.0+codex.20261001000000",
-  "packageDigest": "3d9fe37a9afb9f7ad82f50f4a65aa6657c3fc6fb0547e7e4f03280cd251ca7d7",
-  "publishedAt": "2026-10-01T00:00:00Z",
-  "notes": "CLI-native future plugin candidate: explicit host contract, domain references, recoverable real-service closure."
+  "latestVersion": "1.0.3+codex.20261001055124",
+  "minimumSupportedVersion": "1.0.3+codex.20261001055124",
+  "packageDigest": "c0e6334ba97aa84e2de16c5d7fc93a942537c2cea2b12686bb3b49525d558395",
+  "publishedAt": "2026-10-01T05:51:24Z",
+  "notes": "CLI-native AI书桌新版：补齐核心恢复、社区互动合同与本机数据权利，并记录 Post 回执摘要；不沿用旧版兼容。"
 }
