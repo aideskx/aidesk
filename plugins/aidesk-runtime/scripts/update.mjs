@@ -337,11 +337,25 @@ export async function updatePlugin({ packageRoot = PACKAGE_ROOT, inventory, read
   return { ...target, installedVersion: after.version, status: 'installed_pending_activation', changed: true, commandReportedError: commandError !== null };
 }
 
+export function parseArguments(args) {
+  if (!Array.isArray(args)) throw new Error('invalid_arguments');
+  let apply = false, check = false, explicit;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === '--apply') { apply = true; continue; }
+    if (argument === '--check') { check = true; continue; }
+    if (argument === '--codex') {
+      if (explicit !== undefined || index + 1 >= args.length || typeof args[index + 1] !== 'string' || args[index + 1].startsWith('--')) throw new Error('invalid_arguments');
+      explicit = args[++index]; continue;
+    }
+    throw new Error('invalid_arguments');
+  }
+  if (apply === check) throw new Error('invalid_arguments');
+  return { apply, check, explicit };
+}
+
 async function main() {
-  const args = process.argv.slice(2); const apply = args.includes('--apply'); const check = args.includes('--check');
-  if (apply === check || args.some(arg => !['--apply', '--check', '--codex'].includes(arg))) throw new Error('invalid_arguments');
-  const index = args.indexOf('--codex'); const explicit = index >= 0 ? args[index + 1] : undefined;
-  if (index >= 0 && (!explicit || args.indexOf('--codex', index + 1) >= 0)) throw new Error('invalid_arguments');
+  const { apply, explicit } = parseArguments(process.argv.slice(2));
   const codex = await discoverCodex(explicit); if (!codex) { console.log(JSON.stringify({ status: 'unknown', changed: false, reason: 'host_unavailable' })); return; }
   const releaseLock = await acquireLock(); if (!releaseLock) { console.log(JSON.stringify({ status: 'unknown', changed: false, reason: 'update_busy' })); return; }
   try {

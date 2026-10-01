@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.4+codex.20261001103924",
+  "latestVersion": "1.0.5+codex.20261001120032",
   "minimumSupportedVersion": "1.0.4+codex.20261001103924",
-  "packageDigest": "4de857d4a0cd540eeea5173a626100743a657be7799a15381af0c9e9f71e9f53",
-  "publishedAt": "2026-10-01T10:39:24Z",
-  "notes": "CLI-native AI书桌新版：自动更新、Hook 账本一致性、自然入口与数据权利边界已补齐；仍需完成宿主真实激活和全链路业务验收。"
+  "packageDigest": "bc0f4d02f2bf8ab53c40697c76ce67a875717556b38073077963d7da80cdb614",
+  "publishedAt": "2026-10-01T12:00:32Z",
+  "notes": "CLI-native AI书桌修复显式 --codex 路径更新入口；完整离线回归通过，真实业务链与跨宿主范围仍按验收记录执行。"
 }
