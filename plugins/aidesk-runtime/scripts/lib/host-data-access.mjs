@@ -57,12 +57,14 @@ function validatePrepared(value) {
   return a;
 }
 function fresh(access, now) { need(iso(now) && Date.parse(now) >= Date.parse(access.issuedAt) && Date.parse(now) < Date.parse(access.expiresAt), 'export_access_expired'); }
-async function load(dataRoot, scopeId, accessId, now) {
+async function load(dataRoot, scopeId, accessId, now, identity) {
   need(UUID.test(accessId), 'invalid_access_id'); const paths = roots(dataRoot, scopeId); await directories(paths);
   const directory = join(paths.accesses, accessId); await verifyPrivateDirectory(directory);
   const prepared = (await readPrivateJson(join(directory, 'prepared.json'))).value, access = validatePrepared(prepared);
-  need(access.scopeId === scopeId && access.accessId === accessId, 'invalid_export_access'); fresh(access, now);
+  need(access.scopeId === scopeId && access.accessId === accessId, 'invalid_export_access');
   need(equal((await readPrivateJson(join(paths.index, `${indexKey(access)}.json`))).value, pointer(access)), 'export_access_superseded');
+  if (identity) need(matchesIdentity(access, identity), 'export_pre_mismatch');
+  fresh(access, now);
   return { access, directory, paths };
 }
 async function unconsumed(directory) { need(await optional(join(directory, 'consumed.json')) === null, 'export_access_consumed'); }
@@ -123,14 +125,24 @@ export async function observeDataExportHook(dataRoot, event, { observedAt = new 
     const id = { ...read, observedSessionId: sha256(event.session_id), observedCallId: sha256(event.tool_use_id) }, paths = roots(dataRoot, id.scopeId);
     return await withHostTaskScope(dataRoot, id, async () => {
       await directories(paths, true); await ensurePrivateDirectory(join(paths.calls, id.observedSessionId));
-      const index = await optional(join(paths.index, `${indexKey(id)}.json`));
-      const selected = index ? await load(dataRoot, id.scopeId, index.value.accessId, observedAt) : null;
-      if (selected) { need(matchesIdentity(selected.access, id), 'export_pre_mismatch'); await unconsumed(selected.directory); }
       const path = callPath(paths, id), old = await optional(path);
       if (event.hook_event_name === 'PreToolUse') {
+        let selected = null;
+        const index = await optional(join(paths.index, `${indexKey(id)}.json`));
+        if (index) {
+          try {
+            selected = await load(dataRoot, id.scopeId, index.value.accessId, observedAt, id);
+            await unconsumed(selected.directory);
+          } catch (error) {
+            // A stale, valid export preparation cannot obstruct an ordinary
+            // preview. Corrupt records and identity conflicts still reject.
+            if (!['export_access_expired', 'export_access_consumed'].includes(error?.kind)) throw error;
+            selected = null;
+          }
+        }
         const at = old?.value.at ?? observedAt, pre = selected ? preRecord(selected.access, id, at) : null, claim = claimRecord(id, selected, pre, at);
         if (old) {
-          need(equal(old.value, claim), 'export_pre_not_fresh');
+          need(iso(at) && equal(old.value, claim), 'export_pre_not_fresh');
           if (selected) need(equal((await readPrivateJson(join(selected.directory, 'pre.json'))).value, pre), 'export_pre_not_fresh');
         } else {
           await writePrivateJsonExclusive(path, claim);
@@ -138,8 +150,15 @@ export async function observeDataExportHook(dataRoot, event, { observedAt = new 
         }
         return selected ? { status: 'pre_bound', scopeId: id.scopeId, accessId: selected.access.accessId } : { status: 'not_applicable' };
       }
-      if (!selected) return { status: 'not_applicable' };
       need(old, 'export_pre_missing');
+      need(iso(old.value.at), 'export_pre_not_fresh');
+      if (old.value.accessId === null) {
+        need(equal(old.value, claimRecord(id, null, null, old.value.at)), 'export_pre_not_fresh');
+        return { status: 'not_applicable' };
+      }
+      // Post belongs to its original call, never the latest preparation.
+      const selected = await load(dataRoot, id.scopeId, old.value.accessId, observedAt, id);
+      await unconsumed(selected.directory);
       const pre = (await readPrivateJson(join(selected.directory, 'pre.json'))).value;
       need(equal(preRecord(selected.access, id, pre.at), pre) && equal(old.value, claimRecord(id, selected, pre, pre.at)), 'export_pre_not_fresh');
       const file = join(selected.directory, 'witness.json'), previous = await optional(file);

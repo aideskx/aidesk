@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.6+codex.20261002120609",
+  "latestVersion": "1.1.7+codex.20261002192908",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "84ded52cb5c40a4178c4240cf6ab29232d0171164a48bbc4ad4c0e285b3f329a",
-  "publishedAt": "2026-10-02T16:42:54.447Z",
-  "notes": "1.1.6 技术交付：修复目标接续 contextId 合同；同包已通过 Mac 自然目标、成果保存与后续采用及社区核心路径。Windows/Linux 真实宿主、UI、第二设备、自然实际升级与 P1 余项仍待验，不宣称全部验收或正式运营上线。"
+  "packageDigest": "e8a45b43e07268fe8087edc0e3fc01ab2ac723102a8a1f5e58ccbdd50e1a013f",
+  "publishedAt": "2026-10-02T20:04:00.811Z",
+  "notes": "补齐新正式目标按默认分享设置定稿后公开及读回的同包指引；修复普通预览受旧导出许可提示干扰。关闭分享、旧私人目标、已撤回状态和真实导出／删除权限保持。仅本地候选，实际宿主复验待完成。"
 }
