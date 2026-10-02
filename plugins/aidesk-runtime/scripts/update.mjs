@@ -294,15 +294,30 @@ export async function updatePlugin({ packageRoot = PACKAGE_ROOT, inventory, read
   const comparison = compareVersions(before.version, published.latestVersion);
   if (comparison === undefined) return { ...base, status: 'unknown', changed: false, reason: 'release_invalid' };
   const target = { ...base, targetVersion: published.latestVersion, packageDigest: published.packageDigest, minimumSupportedVersion: published.minimumSupportedVersion };
+  if (!apply) {
+    // Check never owns a write lock. The host can also synchronize outside our
+    // apply lock, so compare bounded observations across the release read and
+    // config/read startup before claiming a stable current/update result.
+    let currentSource, currentPackage, currentInstallation;
+    try { currentSource = await readSource(); } catch { return { ...target, status: 'unknown', changed: false, reason: 'marketplace_source_unavailable' }; }
+    if (currentSource?.source_type !== source.source_type || currentSource.source !== source.source || currentSource.ref !== source.ref)
+      return { ...target, status: 'unknown', changed: false, reason: 'source_changed' };
+    try { currentPackage = await verified(packageRoot, before.version, comparison === 0 ? published.packageDigest : undefined); }
+    catch { return { ...target, status: 'unknown', changed: false, reason: 'package_verification_failed' }; }
+    if (currentPackage.packageDigest !== packageInfo.packageDigest) return { ...target, status: 'unknown', changed: false, reason: 'package_changed' };
+    try { currentInstallation = inspectInstallation(await inventory()); }
+    catch { return { ...target, status: 'unknown', changed: false, reason: 'readback_failed' }; }
+    if (currentInstallation.error || currentInstallation.version !== before.version || currentInstallation.sourcePath !== before.sourcePath)
+      return { ...target, installedVersion: currentInstallation.version ?? null, status: 'unknown', changed: false,
+        reason: currentInstallation.error ?? (currentInstallation.sourcePath !== before.sourcePath ? 'source_changed' : 'installed_version_changed') };
+    // A read-only observation, not a lease preventing later host changes.
+    return { ...target, status: comparison === 0 ? 'current' : comparison > 0 ? 'ahead'
+      : compareVersions(before.version, published.minimumSupportedVersion) === -1 ? 'update_required' : 'update_available', changed: false };
+  }
   if (comparison >= 0) {
       try { await verified(packageRoot, before.version, comparison === 0 ? published.packageDigest : undefined); } catch { return { ...target, status: 'unknown', changed: false, reason: 'package_verification_failed' }; }
     return { ...target, status: comparison === 0 ? 'current' : 'ahead', changed: false };
   }
-  if (!apply) return {
-    ...target,
-    status: compareVersions(before.version, published.minimumSupportedVersion) === -1 ? 'update_required' : 'update_available',
-    changed: false,
-  };
   const fresh = inspectInstallation(await inventory());
   if (fresh.error || fresh.version !== before.version || fresh.sourcePath !== before.sourcePath) return { ...target, installedVersion: fresh.version ?? null, status: 'unknown', changed: null, reason: fresh.error ?? 'installed_version_changed' };
   try { const currentSource = await readSource(); if (currentSource.ref !== null && currentSource.ref !== 'main') return { ...target, status: 'unknown', changed: false, reason: 'pinned_source' }; } catch { return { ...target, status: 'unknown', changed: false, reason: 'marketplace_source_unavailable' }; }
@@ -385,9 +400,11 @@ export async function runUpdater(args, { discover = discoverCodex, acquire = acq
     phase = 'cli_discovery';
     const codex = await discover(parsed.explicit);
     if (!codex) return { result: { status: 'unknown', changed: false, reason: 'host_unavailable', diagnostics: [diagnostic(phase)] }, exitCode };
-    phase = 'lock_acquire';
-    releaseLock = await acquire();
-    if (!releaseLock) return { result: { status: 'unknown', changed: false, reason: 'update_busy' }, exitCode };
+    if (parsed.apply) {
+      phase = 'lock_acquire';
+      releaseLock = await acquire();
+      if (!releaseLock) return { result: { status: 'unknown', changed: false, reason: 'update_busy' }, exitCode };
+    }
     phase = 'update_execution';
     result = { ...await execute({ apply: parsed.apply, codex }), mode: parsed.apply ? 'apply' : 'check' };
   } catch (error) {
