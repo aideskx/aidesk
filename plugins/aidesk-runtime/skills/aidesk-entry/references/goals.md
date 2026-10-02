@@ -8,9 +8,21 @@
 
 旧私人目标和已经存在的私人目标保留原状态；不能因为新默认而批量公开。若用户要把旧目标纳入社区，先取得该准确目标的明确意图并按当前版本重新定稿。分享工具、主体或权限不可用时，报告实际不可用或未知，不声称已公开，也不借 Hook 或本地记录代替服务写入。
 
-正式开展使用 `aidesk-goal-service-v2`，长期目标绑定准确的 `goalId` 与版本。结果未知只用原操作号和原摘要查询，不换号重试。只有服务任务预留返回 `creationDisposition:fresh` 时，才允许按用户明确意图创建一次宿主任务；保留宿主真实 `hostId`、`threadId` 或 `clientThreadId`，不猜编号。
+正式开展使用 `aidesk-goal-service-v2`，长期目标绑定准确的 `goalId` 与版本。结果未知只用原操作号和原摘要查询，不换号重试。
 
+用户明确要求建立独立目标任务后，沿同包本机工具与真实服务回执衔接：
+
+1. `aidesk_host_task_context({action:"source"})` 返回本次宿主实际 `sourceThreadId` 与 `hostId`，不从环境、对话标题或示例猜编号。用它们和已受理的服务原号组成一次性任务 reserve 输入。
+2. 在 reserve 前，调用 `aidesk_host_task_context({action:"prepare_creation",reservationInput})`，保存返回的 `contextId`。随后将同一输入交给真实 `aidesk_goal_task_reserve`。只有这次服务返回 `creationDisposition:"fresh"` 且真实 Pre/Post 已被本机 owner 关联，才能创建；模型转述或重读到的旧回执不能代替。
+3. 调用 `aidesk_host_task_dispatch({action:"create",contextId,prompt})` 一次。prompt传清目标、版本、attempt、原服务关联、用户授权和成果要求；目标任务先取得自身真实来源并读取准确 attempt，只有服务已有相同 threadId 的 created 记录，才保存报告及其结果。尚未登记时只做不依赖报告写入的准备并结束本回合，等待父对话按原 threadId 接续；不要用持续轮询阻止该回合结束，不另 reserve 或再建一份任务，也不先写结果绕过报告关联。不把主对话的问题变成额外业务范围。
+4. `starting`、执行或持久读回 `unknown` 都不是创建成功。按同一 `contextId` 用 `aidesk_host_task_read` 读取原状态；只有 owner 返回与该 context/run/真实 threadId 绑定的 `entryProof` 且 `creationVisible:true`，才能用其 `evidence.entryUri`、`evidenceRef` 记录宿主创建 `visible:true`。owner 仍为 `starting`／`running` 时，等待原回合结束后按同一 context 读回证明，不用桌面查看替代 owner 证明。记录 `creation` 事件时，`status:"created"` 必须填 `clientThreadId:null`，真实子任务 ID 填在 `task.threadId`；只有 `pending` 使用宿主返回的临时 `clientThreadId`，此时 `task:null`；`unknown`、`not_found`、`rejected` 均填 `clientThreadId:null`、`task:null`，不猜编号。证明来自受支持默认桌面入口能力及本次真实持久读回，不能由模型、自传 profile、home 字符串或链接格式补造。证明为空时保留真实 threadId 并说明入口未核，不重建；`entryAccessible:"unknown"` 仍只表示当前页面尚未实际观测，不阻止已满足上述证明条件的 created 登记。父对话保存创建记录后，按原任务准备访问并取得 snapshot 见证，再 resume 原 threadId 交接登记结果，让子任务核准同号 created 后报告。服务接受记录、持久创建、当前页面可达和成果验证分别说明；不要根据 exit0 宣布目标完成。
+
+后续继续、暂停或结束先沿真实 `aidesk_goal_task_read` / `aidesk_goal_task_record` 核当前目标版本和用户决定；执行决定与送达结果分别记载。要控制已有宿主任务时，调用 `aidesk_host_task_context({action:"prepare_access",expectedAccountSubject,goalId,contextId,accessAction})`，按返回的准确 snapshot 读取参数调用真实服务，再将返回的 `accessId` 用于本机 `read`、`resume` 或 `interrupt`。新对话也必须经过这次真实读取；不传模型拼接的回执。恢复只向原 `threadId` 发送新提示，暂停只请求中断 owner 正在管理的原进程。当前决定已 ended、任务身份不符、宿主忙或结果未知时保留原入口，不重建、归档或替换任务。
+
+本机运行观察是来源证据，宿主聊天是否仍可进入需按实际访问另记。回到主对话后读取真实服务报告与结果继续协作；目标任务尚未报告时如实说明，不把本机状态哈希还原成不存在的成果。
 目标任务记录应分开保存创建、分享决定、公开投影、送达、宿主观察和报告。服务回执、宿主观察和模型自报分别呈现；报告中的本地文件或摘要不等于服务终态或宿主可进入。
+
+报告 `progress` 是不含换行的进展摘要，按 UTF-8 编码最多 2048 字节，不是 2048 个中文字符。报告引用实际成果时，按已核实范围填写路径、摘要和访问限制；未核验的内容或可达性明确写未知，不猜测。完整成果可保存在文件及后续结果 `body.summary` 中，后者允许换行但仍限 8192 UTF-8 字节。先取得真实报告回执，再保存关联结果。
 
 取得真实任务报告后，结果回报使用 `aidesk_goal_result_record`，并绑定准确的 `goalId`、`goalVersion`、任务 `attemptId`、`reportId` 和结果正文中的来源、限制、成果位置及验证级别。结果服务只保存带来源的个人结果事实；记录成功不证明宿主确实执行、来源仍可访问或用户已经达成目标。结果写入未知时沿同一 `operationId` 调用 `aidesk_goal_result_operation` 对账，不能换号重放。
 

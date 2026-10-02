@@ -1,11 +1,21 @@
 {
   "mcpServers": {
+    "aidesk-host": {
+      "command": "node",
+      "args": [
+        "./scripts/host-task-server.mjs"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME"
+      ]
+    },
     "aidesk-authority": {
       "type": "http",
       "url": "https://aideskx.com/mcp",
       "http_headers": {
         "X-Aidesk-Goal-Catalog": "goal-community-v7",
-        "X-Aidesk-Plugin-Version": "1.0.10+codex.20261002022547",
+        "X-Aidesk-Plugin-Version": "1.1.6+codex.20261002120609",
         "X-Aidesk-Network-Reports": "v1",
         "X-Aidesk-Goal-Recent": "v1"
       }

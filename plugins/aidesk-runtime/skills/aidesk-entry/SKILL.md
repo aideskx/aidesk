@@ -19,8 +19,9 @@ description: 打开 AI 书桌，澄清本人目标，衔接宿主目标任务，
 ## 入口顺序
 
 1. 用户只问介绍：说明能力、当前限制和下一步，不读账号。
-2. 用户明确打开或继续：先按当前安装路径运行同包 `../../scripts/update.mjs --check`（路径以本 SKILL.md 所在目录为基准）；它只读宿主官方 app-server `config/read`、公开稳定发布元数据和本机当前 CLI-native 包摘要。`current`/`ahead` 可继续；`update_available`/`update_required` 自动沿同一原号执行 `../../scripts/update.mjs --apply`，只调用官方 marketplace `upgrade`/`add`，并在写入后复核版本、来源和包摘要。若返回 `installed_pending_activation`，或失败/`unknown`，立即停在事实状态，不能继续依赖新版的业务动作，不重试换号、不猜测最新版；只有新鲜连接读回后才能说已生效。
-   仍可调用 `aidesk_check_plugin_update({})` 作为 MCP 连接侧的只读交叉核对；它不能替代本机包校验，也不能把当前连接已刷新当成安装完成。
+2. 用户明确打开或继续：调用同包只读工具 `aidesk_host_update_read({action:"check"})`。它只比较当前加载包目录的字节/版本和可信公开发行，不启动宿主命令、不创建票据；`scope=loaded_package`、`installationVerified=false`、`configuredSourceVerified=false` 表示安装库存与配置来源未核验。`loaded_current`/`loaded_ahead` 可继续使用当前包，不能称安装来源已核验；`update_available`/`update_required` 表示加载包需要更新。
+   有更新且获准更新时，调用 `aidesk_host_update({action:"prepare"})` 完整重查安装和来源，再用本次返回的 `ticket` 调用 `action:"apply"` 一次；宿主修改审批继续适用，被拦时说明并停止依赖更新的动作，不改权限或用 shell 绕过。已有未知安装 ticket 时只调用 `aidesk_host_update_read({action:"status",ticket})`，不因新 check 有更新就另申请票据重试；check 或 prepare 失败且未返回 ticket 时说明具体原因，不编造 ticket 或调用 status。`installed_pending_activation` 表示已安装但当前连接尚未确认采用；未确认新连接时不依赖新版开展业务。
+   再用 `aidesk_check_plugin_update({})` 交叉核对当前远端连接；连接版本、加载包测量和安装来源分别报告。本机工具不可用或 check 为 `unknown` 时说明具体缺口，不宣称最新版，不把 shell 更新脚本当作自然入口的替代步骤。维护命令不属于普通用户操作。
 3. 需要本人服务时调用 `aidesk_account_status({})`；成功后使用返回的主体核对账号准备和订阅，不把失败解释为空账号。
 4. 需要目标动作时先澄清意图、完成依据、限制和是否建立独立任务；保存、受理、创建、执行、回报逐项说明。
 5. 结果回报包含状态、来源、限制和下一步；不把模型自报或服务元数据写成成果证明。
@@ -39,7 +40,7 @@ description: 打开 AI 书桌，澄清本人目标，衔接宿主目标任务，
 
 ## Hook 与 MCP
 
-Hook 只围绕目标 MCP 工具做调用前后校验和恢复提示；普通对话、用户输入、Stop、文件内容和社区正文都不采集。恢复账本只保存主体、目标和对象的哈希关联、操作摘要与回执摘要，可按准确主体和目标导出或清理；凭据、Token、完整业务正文和无关文件不写入 Plugin。
+Hook 只围绕目标 MCP 工具做调用前后校验和恢复提示；普通对话、用户输入、Stop、文件内容和社区正文都不采集。恢复账本与本机任务状态仅保存身份关联、操作/回执摘要、真实任务ID和受限状态，可按准确主体和目标导出或清理。任务工作目录中的成果与宿主聊天单独保留，删除服务记录不表示这些副本已删除；凭据、Token和完整MCP回执不写入本机状态。
 
 当工具、账号、权益、社区或宿主能力不可用时，报告具体缺口并保留可继续的工作；不使用 shell 伪造 MCP、不直连 OAuth、不创建临时账号、不以旧包行为代替新版能力。
 

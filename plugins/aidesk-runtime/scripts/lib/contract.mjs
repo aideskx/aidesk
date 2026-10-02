@@ -80,6 +80,8 @@ export function operationId(input) {
   return typeof input?.operationId === 'string'
     && input.operationId.length > 0
     && input.operationId.length <= 200
+    // Reject control characters in durable operation identifiers.
+    // eslint-disable-next-line no-control-regex
     && !/[\u0000\r\n]/u.test(input.operationId)
     ? input.operationId
     : null;

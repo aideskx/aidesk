@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.10+codex.20261002022547",
+  "latestVersion": "1.1.6+codex.20261002120609",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "67fb270beeaa358223f841f0ab1d10e2215ab022836d27bdb215100dff20e55c",
-  "publishedAt": "2026-10-02T02:25:47Z",
-  "notes": "本机--check不再写更新锁，并复核安装、来源及包一致性；--apply仍保持排他锁，未知结果不自动重试。修复1.0.9已观察到的lock_acquire/EPERM，不代表完整自然链或全功能通过。"
+  "packageDigest": "84ded52cb5c40a4178c4240cf6ab29232d0171164a48bbc4ad4c0e285b3f329a",
+  "publishedAt": "2026-10-02T12:21:39.525Z",
+  "notes": "1.1.6 本地待验候选：修复目标任务接续的可选 contextId 声明与实现不一致；自然业务验收仍需新样本。"
 }

@@ -1,6 +1,6 @@
 # 数据权利与本地留存
 
-只保存继续工作所需的目标引用、操作号、请求摘要、必要状态和恢复关联。密码、Token、验证码、完整 MCP 回执、完整对话、目标正文和无关文件不写入 Plugin 数据目录。
+恢复账本和本机任务元数据只保存继续工作所需的目标哈希、操作号、请求摘要、必要状态和恢复关联，不保存密码、Token、验证码、完整 MCP 回执或完整对话。目标任务的工作目录可能包含用户要求生成的成果文件；它与恢复元数据分别管理，不能把“摘要不含正文”说成整个目录没有用户内容。
 
 服务侧的导出、删除预览、删除、取消和状态读取必须使用服务当前实际提供的工具。删除前先读准确对象和当前版本；预览不是删除，未知结果不重复提交。只有服务返回明确的 `deleted` 或 `cancelled` 终态，才向用户报告服务侧已完成。服务工具不可用时，本机摘要操作不冒充云端删除或导出。
 
@@ -10,18 +10,14 @@
 
 私人结果不是独立的社区公开对象；此撤回只影响已选公开投影，不更正或删除私人结果，也不删除他人采用引用、已有副本或宿主历史。旧网络对象的 `aidesk_goal_network_withdraw` 只用于其实际 `cohortId/postId` 合同，不能套用到当前 `publicId`。当前服务未提供准确撤回工具时，如实报告能力不可用，不能把普通 `community_close` 或本机清理冒充精确撤回。
 
-本机 `PLUGIN_DATA` 只作为恢复原件的受限目录，文件使用最小权限并保存摘要而非正文。写入 Hook 为每条记录保存主体哈希、`operationId`、请求哈希、工具、阶段、目标哈希和受限对象标识哈希；不会保存原始 `goalId`、公开正文、Token 或回执内容。云端服务原件、宿主任务和本地恢复记录分别说明，不把本机路径当作云端备份。
+本机 Hook 为每条恢复记录保存主体哈希、`operationId`、请求哈希、工具、阶段、目标哈希和受限对象标识哈希；本机任务 owner 另保存实际任务 ID、运行状态、时间和正文摘要。云端原件、宿主聊天、任务工作文件、本机恢复摘要和独立导出分别说明。
 
-在获得本机路径和准确主体后，可以只读导出摘要。下面的脚本路径均以入口 `SKILL.md` 所在目录为基准：
+导出本机目标摘要时，先用 `aidesk_host_task_data({action:"prepare_export",expectedAccountSubject,goalId})` 准备读取，再调用它返回的准确只读预览工具和参数，最后用 `aidesk_host_task_data({action:"export",scopeId,accessId})`。该预览只核本人目标范围，不删除目标，也不要求已有宿主任务；删除后的保留摘要同样可以按本次真实核验导出。模型转述账号、拼接回执或本机路径都不能替代本次服务核验。结果中的 `bodyStored:false`、`credentialsStored:false` 仅描述导出的元数据。
 
-```text
-node ../../scripts/lifecycle-hook.mjs --export-summary --data-root <PLUGIN_DATA> --account-subject <subject> [--goal-id <goalId>] [--target-kind <kind> --target-id <id>]
-```
+用户明确删除目标时，先核原任务已经停止且状态明确，再按服务合同完成云端删除。真实删除 Post Hook 会给出本次 `scopeId` 与 `witnessId`；用 `aidesk_host_task_data({action:"clean",scopeId,witnessId})` 清理同一目标的本机元数据。未知、活跃任务、残留控制连接或文件摘要改变时保持清理待完成，不杀未知进程或改号重建。清理发生部分失败时，保留原计划和准确编号，后续只续原计划。
 
-本机清理要求准确主体、目标或对象过滤条件及显式 `--confirm`；它只改本机恢复账本，不调用云端服务，也不删除宿主任务：
+云端回执丢失或本机见证过期时，沿准确原操作号和请求摘要读取 `aidesk_goal_data_delete_operation`，或使用服务实际支持的删除预览读取。只有本次真实 Pre/Post 明确确认同一目标已 deleted 后，才会产生新的本机清理见证；`not_found`、`unknown`、`cancelled` 均不授权清理，也不重新发送 delete。
 
-```text
-node ../../scripts/lifecycle-hook.mjs --clean-recovery --data-root <PLUGIN_DATA> --account-subject <subject> --goal-id <goalId> [--target-kind <kind> --target-id <id>] --confirm
-```
+本机清理保留任务工作目录的成果文件、宿主聊天和独立导出，并保留必要的目标哈希删除标记及原清理计划，阻止迟到回执恢复旧任务。向用户分别报告云端结果、本机清理结果和这些保留副本。不能声称宿主历史、所有文件或他人副本已全部删除。
 
-导出结果只返回哈希、阶段、工具、操作号和时间等摘要，并明确 `bodyStored:false`、`credentialsStored:false`。清理没有过滤条件、主体不匹配或缺少确认时拒绝；清理后如需删除服务侧数据，仍须沿服务合同执行并读取明确终态。
+同包 `lifecycle-hook.mjs --export-summary` / `--clean-recovery` 是显式本机维护入口，使用准确主体和目标过滤，清理另需 `--confirm`。它们不取得云端权限，不取代以上正常工具路径；不能让用户手动查找数据根或复制认证信息来完成普通操作。

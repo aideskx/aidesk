@@ -1,11 +1,23 @@
 #!/usr/bin/env node
-import { chmod, mkdir, open, readdir, rename, rm, lstat, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import { isKnownTool, isWriteTool, operationId, sha256, toolFromEvent } from './lib/contract.mjs';
 import { requestDigest } from './domain/contracts.mjs';
+import { parseGoalTaskInput, parseGoalResultInput, splitGoalMcpRequest } from './domain/host-task-authority.generated.mjs';
+import { observeReserveHook } from './lib/host-task-context.mjs';
+import { registerHostDataBinding } from './lib/host-data-binding.mjs';
+import { associationFromArgs, appendRecoveryRecord, readRecoveryPre, exportRecoveryLedger, cleanRecoveryLedger } from './lib/recovery-ledger.mjs';
+import { exportHostTaskMetadataForSubject, cleanHostTaskMetadata, observeHostGoalDeletion } from './lib/host-task-data-rights.mjs';
+import { observeTaskAccessHook } from './lib/host-task-access.mjs';
+import { observeDataExportHook } from './lib/host-data-access.mjs';
 
 const MAX_INPUT_BYTES = 1024 * 1024;
+
+// Binding availability only enables the separate local owner. Registration
+// failure never changes an otherwise valid remote read or business result.
+async function registerLocalOwnerBinding() {
+  try { await registerHostDataBinding(); } catch { /* Local owner remains unavailable. */ }
+}
 
 function output(value) { process.stdout.write(`${JSON.stringify(value)}\n`); }
 function context(message) { return { hookSpecificOutput: { hookEventName: phase, additionalContext: message } }; }
@@ -14,57 +26,6 @@ function deny(code, message) {
     permissionDecisionReason: `AI书桌新版 Hook 已停止本次调用：${code}。${message}` } };
 }
 function isNonEmptyString(value, max = 256) { return typeof value === 'string' && value.length > 0 && value.length <= max; }
-function boundedString(value, max = 256) { return isNonEmptyString(value, max) ? value : null; }
-const TARGET_IDENTIFIER_FIELDS = ['id', 'kind', 'goalId', 'publicId', 'publicVersion', 'commentId', 'notificationId', 'familyId', 'learnerId', 'sourceId'];
-function associationFromArgs(args, tool = null) {
-  const target = args?.target && typeof args.target === 'object' && !Array.isArray(args.target) ? args.target : {};
-  // Service acceptance references a goal through the formal v1/v2 goalRef;
-  // do not search arbitrary nested request content for a cleanup association.
-  const goalRef = tool === 'aidesk_goal_service_cooperate'
-    && ['aidesk-goal-service-v1', 'aidesk-goal-service-v2'].includes(args?.contract)
-    && args.goalRef && typeof args.goalRef === 'object' && !Array.isArray(args.goalRef) ? args.goalRef : {};
-  const referenceGoalId = boundedString(goalRef.goalId, 512);
-  const directGoalIds = [args?.goalId, target.goalId].map(value => boundedString(value, 512)).filter(Boolean);
-  if (referenceGoalId && directGoalIds.some(value => value !== referenceGoalId)) throw new Error('goal association conflict');
-  const values = {};
-  for (const field of TARGET_IDENTIFIER_FIELDS) {
-    const value = target[field] ?? args?.[field];
-    if (field === 'publicVersion' && Number.isSafeInteger(value)) values[field] = String(value);
-    else if (boundedString(value, 512)) values[field] = value;
-  }
-  if (!values.kind && boundedString(args?.targetKind, 128)) values.kind = args.targetKind;
-  if (!values.id && boundedString(args?.targetId, 512)) values.id = args.targetId;
-  const targetKind = boundedString(values.kind, 128);
-  const goalId = directGoalIds[0] ?? referenceGoalId;
-  // Normalize the primary object identifier so a target can be addressed by
-  // --target-kind/--target-id without having to reproduce unrelated public
-  // version or display metadata from the original request.
-  const primaryField = ['id', 'goalId', 'publicId', 'commentId', 'notificationId', 'familyId', 'learnerId', 'sourceId']
-    .find(field => boundedString(values[field], 512));
-  const identity = primaryField ? { kind: targetKind, id: values[primaryField] } : null;
-  return {
-    goalIdSha256: goalId ? sha256(goalId) : null,
-    targetSha256: identity ? sha256(identity) : null,
-    targetKind,
-  };
-}
-function projectRecord(record) {
-  return {
-    phase: record.phase ?? null,
-    tool: record.tool ?? null,
-    operationId: record.operationId ?? null,
-    accountSubjectSha256: record.accountSubjectSha256 ?? null,
-    requestSha256: record.requestSha256 ?? null,
-    goalIdSha256: record.goalIdSha256 ?? null,
-    targetSha256: record.targetSha256 ?? null,
-    targetKind: record.targetKind ?? null,
-    observedSessionId: record.observedSessionId ?? null,
-    observedCallId: record.observedCallId ?? null,
-    responseSha256: record.responseSha256 ?? null,
-    responseIsError: typeof record.responseIsError === 'boolean' ? record.responseIsError : null,
-    at: record.at ?? null,
-  };
-}
 function suppliedRequestDigestMatches(args) {
   // MCP domain contracts derive the request digest from the complete write
   // body; older valid calls omit the derived field and let the service return
@@ -76,94 +37,6 @@ function suppliedRequestDigestMatches(args) {
     && /^[a-f0-9]{64}$/u.test(args.requestSha256)
     && args.requestSha256 === requestDigest(args);
 }
-function operationPath(dataRoot, subject, id) {
-  // Keep the user-supplied operation id out of a path unless it is a portable filename.
-  // The account directory is a one-way subject hash, so records from two subjects cannot collide.
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u.test(id)) return null;
-  return join(resolve(dataRoot), 'operations', sha256(subject), `${id}.jsonl`);
-}
-async function syncDirectory(path) {
-  if (process.platform === 'win32') return;
-  const handle = await open(path, (constants.O_RDONLY ?? 0) | (constants.O_NOFOLLOW ?? 0));
-  try { await handle.sync(); } finally { await handle.close(); }
-}
-async function assertDirectory(path, { create = true } = {}) {
-  const target = resolve(path);
-  // Always validate the immediate parent, including when the target already
-  // exists. Otherwise an existing directory below a parent symlink would be
-  // accepted and later writes could escape the host-owned data root.
-  const parent = dirname(target);
-  const parentItem = await lstat(parent);
-  if (parentItem.isSymbolicLink() || !parentItem.isDirectory()) throw new Error('unsafe parent directory');
-  try {
-    const item = await lstat(target);
-    if (item.isSymbolicLink() || !item.isDirectory()) throw new Error('unsafe directory');
-    await chmod(target, 0o700);
-    return target;
-  } catch (error) {
-    if (error?.code !== 'ENOENT' || !create) throw error;
-    // PLUGIN_DATA is host-owned. Never recursively create an ancestor or
-    // follow a parent symlink while materializing a missing leaf.
-    await mkdir(target, { recursive: false, mode: 0o700 });
-    const item = await lstat(target);
-    if (item.isSymbolicLink() || !item.isDirectory()) throw new Error('unsafe directory', { cause: error });
-    await chmod(target, 0o700);
-    await syncDirectory(parent);
-    return target;
-  }
-}
-async function appendRecoveryRecord(dataRoot, args, record) {
-  const root = resolve(dataRoot);
-  await assertDirectory(root, { create: true });
-  const operations = join(root, 'operations');
-  await assertDirectory(operations, { create: true });
-  const subject = args.expectedAccountSubject;
-  const subjectDir = join(operations, sha256(subject));
-  await assertDirectory(subjectDir, { create: true });
-  const path = operationPath(root, subject, record.operationId);
-  if (!path) throw new Error('unsafe operation id');
-  const lock = `${path}.lock`;
-  let handle;
-  try {
-    handle = await open(lock, 'wx', 0o600);
-    const previous = await readLedgerFile(path).catch(error => {
-      if (error?.code === 'ENOENT') return '';
-      throw error;
-    });
-    const rows = previous.split('\n').filter(Boolean).map(line => JSON.parse(line));
-    if (rows.some(row => row.operationId !== record.operationId || row.accountSubjectSha256 !== record.accountSubjectSha256)) throw new Error('ledger identity conflict');
-    if (rows.some(row => row.requestSha256 !== record.requestSha256)) {
-      throw new Error('idempotency conflict');
-    }
-    if (rows.some(row => row.requestSha256 === record.requestSha256 && row.phase === record.phase)) return true;
-    const file = await open(path, (constants.O_WRONLY ?? 0) | (constants.O_APPEND ?? 0) | (constants.O_CREAT ?? 0) | (constants.O_NOFOLLOW ?? 0), 0o600);
-    try {
-      const item = await file.stat();
-      if (!item.isFile()) throw new Error('unsafe ledger file');
-      await file.write(`${JSON.stringify(record)}\n`, null, 'utf8');
-      await file.sync();
-    } finally { await file.close(); }
-    await chmod(path, 0o600);
-    await syncDirectory(dirname(path));
-    return true;
-  } finally {
-    // Only the process that successfully created the lock owns it. In
-    // particular, an EEXIST failure must leave another writer's lock intact.
-    if (handle) {
-      try { await handle.close(); } finally { await rm(lock, { force: true }); }
-    }
-  }
-}
-
-async function readLedgerFile(path) {
-  const file = await open(path, (constants.O_RDONLY ?? 0) | (constants.O_NOFOLLOW ?? 0));
-  try {
-    const item = await file.stat();
-    if (!item.isFile()) throw new Error('unsafe ledger file');
-    return await file.readFile('utf8');
-  } finally { await file.close(); }
-}
-
 function cliOptions(argv) {
   const options = new Map();
   for (let index = 0; index < argv.length; index += 1) {
@@ -185,7 +58,8 @@ function requiredOption(options, name, max = 4096) {
 }
 
 async function recordPostObservation(dataRoot, tool, event, args) {
-  if (!isWriteTool(tool) || !isNonEmptyString(dataRoot, 4096) || !isAbsolute(dataRoot)
+  if (!isWriteTool(tool)) return 'not_applicable';
+  if (!isNonEmptyString(dataRoot, 4096) || !isAbsolute(dataRoot)
     || !operationId(args) || !isNonEmptyString(args.expectedAccountSubject, 512)) return 'unavailable';
   const response = event.tool_response;
   try {
@@ -220,102 +94,29 @@ function filterFromOptions(options, { requireFilter = false } = {}) {
     targetKind: targetKind ?? null,
   };
 }
-function matchesFilter(record, filter) {
-  if (filter.goalIdSha256 && record.goalIdSha256 !== filter.goalIdSha256) return false;
-  if (filter.targetSha256 && record.targetSha256 !== filter.targetSha256) return false;
-  if (filter.targetKind && record.targetKind !== filter.targetKind) return false;
-  return true;
-}
-async function ledgerFiles(dataRoot, subject) {
-  const root = resolve(dataRoot);
-  const operations = join(root, 'operations');
-  const subjectDir = join(operations, sha256(subject));
-  for (const directory of [root, operations, subjectDir]) {
-    try {
-      const item = await lstat(directory);
-      if (item.isSymbolicLink() || !item.isDirectory()) throw new Error('unsafe_data_root');
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        const parent = dirname(directory);
-        const parentItem = await lstat(parent).catch(() => null);
-        if (!parentItem || parentItem.isSymbolicLink() || !parentItem.isDirectory()) throw new Error('unsafe_data_root', { cause: error });
-        return [];
-      }
-      throw error;
-    }
-  }
-  const entries = await readdir(subjectDir, { withFileTypes: true });
-  const paths = [];
-  for (const entry of entries) {
-    if (!entry.name.endsWith('.jsonl')) continue;
-    const path = join(subjectDir, entry.name);
-    const item = await lstat(path);
-    if (item.isSymbolicLink() || !item.isFile()) throw new Error('unsafe_data_root');
-    paths.push(path);
-  }
-  return paths.sort();
-}
-async function readLedgerFiles(paths) {
-  const rows = [];
-  for (const path of paths) {
-    const text = await readLedgerFile(path);
-    for (const line of text.split('\n').filter(Boolean)) {
-      let row;
-      try { row = JSON.parse(line); } catch { throw new Error('ledger_corrupt'); }
-      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('ledger_corrupt');
-      rows.push({ path, row });
-    }
-  }
-  return rows;
-}
 async function exportSummary(options) {
   const dataRoot = requiredOption(options, '--data-root');
   const subject = requiredOption(options, '--account-subject', 512);
   const filter = filterFromOptions(options);
-  const paths = await ledgerFiles(dataRoot, subject);
-  const rows = await readLedgerFiles(paths);
-  const selected = rows.filter(({ row }) => matchesFilter(row, filter)).map(({ row }) => projectRecord(row));
-  output({
-    format: 1,
-    status: 'ok',
-    accountSubjectSha256: sha256(subject),
-    filter,
-    recordCount: selected.length,
-    records: selected,
-    bodyStored: false,
-    credentialsStored: false,
-  });
+  const ledger = await exportRecoveryLedger(dataRoot, { accountSubjectSha256: sha256(subject), ...filter });
+  const targetGoal = filter.targetKind === 'goal' ? sha256(option(options, '--target-id')) : null;
+  const goal = filter.targetKind === null ? filter.goalIdSha256 : targetGoal && (!filter.goalIdSha256 || filter.goalIdSha256 === targetGoal) ? targetGoal : null;
+  const hostTaskMetadata = filter.targetKind === null || goal ? await exportHostTaskMetadataForSubject(await realpath(resolve(dataRoot)), { accountSubjectSha256: sha256(subject), goalIdSha256: goal }) : [];
+  output({ ...ledger, hostTaskMetadata });
 }
 async function cleanSummary(options) {
   if (!options.has('--confirm')) throw new Error('confirm_required');
   const dataRoot = requiredOption(options, '--data-root');
   const subject = requiredOption(options, '--account-subject', 512);
   const filter = filterFromOptions(options, { requireFilter: true });
-  const paths = await ledgerFiles(dataRoot, subject);
-  const rows = await readLedgerFiles(paths);
-  let removed = 0;
-  let remaining = 0;
-  const grouped = new Map();
-  for (const item of rows) {
-    const list = grouped.get(item.path) ?? [];
-    list.push(item.row);
-    grouped.set(item.path, list);
-  }
-  for (const [path, records] of grouped) {
-    const kept = records.filter(record => !matchesFilter(record, filter));
-    removed += records.length - kept.length;
-    remaining += kept.length;
-    if (kept.length === records.length) continue;
-    if (kept.length === 0) await rm(path);
-    else {
-      const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
-      await writeFile(temp, `${kept.map(record => JSON.stringify(record)).join('\n')}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-      await chmod(temp, 0o600);
-      await rename(temp, path);
-    }
-    await syncDirectory(dirname(path));
-  }
-  output({ format: 1, status: 'ok', accountSubjectSha256: sha256(subject), filter, removedRecords: removed, remainingRecords: remaining, bodyStored: false, credentialsStored: false });
+  const scope = { accountSubjectSha256: sha256(subject), ...filter };
+  const targetGoal = filter.targetKind === 'goal' ? sha256(option(options, '--target-id')) : null;
+  const goal = filter.targetKind === null ? filter.goalIdSha256 : targetGoal && (!filter.goalIdSha256 || filter.goalIdSha256 === targetGoal) ? targetGoal : null;
+  if (!goal) { output(await cleanRecoveryLedger(dataRoot, scope)); return; }
+  await exportRecoveryLedger(dataRoot, scope);
+  const result = await cleanHostTaskMetadata(await realpath(resolve(dataRoot)), { accountSubjectSha256: scope.accountSubjectSha256, goalIdSha256: goal },
+    { confirm: true, ledgerFilter: { targetSha256: filter.targetSha256, targetKind: filter.targetKind } });
+  const { localLedger, ...hostTaskMetadata } = result; output({ ...localLedger, hostTaskMetadata });
 }
 async function maybeRunRecoveryCommand() {
   const argv = process.argv.slice(2);
@@ -357,13 +158,36 @@ if (!isKnownTool(tool)) { output(deny('unknown_tool', '目标工具不在新版 
 const args = event.tool_input;
 if (!args || typeof args !== 'object' || Array.isArray(args)) { output(deny('invalid_input', '工具输入必须是对象。')); process.exit(0); }
 const write = isWriteTool(tool);
+// Read observation never denies the authority call or changes its result.
+// Only the separate local task owner can consume a fresh access witness.
+const accessObservation = await observeTaskAccessHook(process.env.PLUGIN_DATA, event);
+const deletionWitness = await observeHostGoalDeletion(process.env.PLUGIN_DATA, event, {
+  readPreRecord: () => readRecoveryPre(process.env.PLUGIN_DATA, args),
+});
+const dataExportObservation = await observeDataExportHook(process.env.PLUGIN_DATA, event);
+
 if (phase === 'PreToolUse') {
   if (write && !operationId(args)) { output(deny('operation_id_required', '写入必须携带一次性的 operationId；请沿原请求恢复，不要换号重试。')); process.exit(0); }
   if (write && !isNonEmptyString(args.contract, 256)) { output(deny('contract_required', '写入必须携带领域 contract。')); process.exit(0); }
   if (write && !isNonEmptyString(args.expectedAccountSubject, 512)) { output(deny('account_subject_required', '写入必须携带已核实的 expectedAccountSubject。')); process.exit(0); }
   if (write && !suppliedRequestDigestMatches(args)) { output(deny('request_digest_invalid', '请求摘要格式或规范化输入不一致；请沿原请求核对，不要换号重试。')); process.exit(0); }
+  const taskAction = tool === 'aidesk_goal_task_record' ? 'record' : tool === 'aidesk_goal_task_reserve' ? 'reserve' : null;
+  const resultAction = tool === 'aidesk_goal_result_record' ? 'record' : tool === 'aidesk_goal_result_correct' ? 'correct' : null;
+  if (taskAction || resultAction) {
+    // Reuse the authority parser before an invalid request acquires an immutable
+    // recovery digest. Post must still observe already-sent originals, including
+    // requests rejected by an older caller or the service.
+    try {
+      const { businessInput } = splitGoalMcpRequest(args);
+      if (taskAction) parseGoalTaskInput(taskAction, businessInput);
+      else parseGoalResultInput(resultAction, businessInput);
+    } catch {
+      output(deny(taskAction ? 'task_request_invalid' : 'result_request_invalid', '任务或成果请求未通过领域参数校验，本次未派发，也未新增恢复原件。请核对字段、UTF-8字节限制及文本格式；已有原号的请求内容仍不可修改。')); process.exit(0);
+    }
+  }
   const dataRoot = process.env.PLUGIN_DATA;
   if (write && (!isNonEmptyString(dataRoot, 4096) || !isAbsolute(dataRoot))) { output(deny('plugin_data_unavailable', '宿主没有提供绝对路径 PLUGIN_DATA，无法建立本机恢复记录。')); process.exit(0); }
+  await registerLocalOwnerBinding();
   if (write) {
     try {
       const association = associationFromArgs(args, tool);
@@ -376,19 +200,53 @@ if (phase === 'PreToolUse') {
         observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
         at: new Date().toISOString(),
       };
-      const recorded = await appendRecoveryRecord(dataRoot, args, record);
-      if (recorded === false) process.exit(0);
+      const host = await observeReserveHook(dataRoot, event, {
+        observedAt: record.at,
+        appendPreRecord: extra => appendRecoveryRecord(dataRoot, args, { ...record, ...extra }, { scopeHeld: true }),
+      });
+      if (host.status === 'rejected') {
+        output(deny(`host_task_${host.error}`, '本次独立任务上下文未绑定真实 Pre 原件；保留原号，不能补写旧记录或换号创建。')); process.exit(0);
+      }
+      if (host.status === 'not_applicable') await appendRecoveryRecord(dataRoot, args, record);
     } catch (error) {
       const code = ['ledger identity conflict', 'idempotency conflict', 'unsafe operation id', 'goal association conflict'].includes(error?.message) ? 'recovery_record_conflict' : 'recovery_record_failed';
       output(deny(code, '本机恢复原件没有安全落盘，本次写入停止。')); process.exit(0);
     }
   }
-  output({}); process.exit(0);
+  const readNotices = [];
+  if (accessObservation.status === 'rejected') readNotices.push(`AI书桌本机任务访问见证未建立：${accessObservation.error}。当前读取仍可继续；本机接续需重新核对，不能借此创建其他任务。`);
+  if (dataExportObservation.status === 'rejected') readNotices.push(`AI书桌本机导出许可未建立：${dataExportObservation.error}。当前读取仍可继续；先重新准备并读取，不能把旧回执当导出许可。`);
+  output(readNotices.length ? context(readNotices.join('\n')) : {}); process.exit(0);
 }
 
+await registerLocalOwnerBinding();
 const response = event.tool_response;
 const digest = response === undefined ? null : sha256(response);
 const observation = await recordPostObservation(process.env.PLUGIN_DATA, tool, event, args);
+const hostWitness = await observeReserveHook(process.env.PLUGIN_DATA, event, {
+  readPreRecord: () => readRecoveryPre(process.env.PLUGIN_DATA, args),
+});
+// A deleted preview can establish both independent read and cleanup rights.
+// Preserve both references in the real Hook output instead of hiding one.
+const dataNotices = [];
+if (deletionWitness.status === 'deletion_witness_saved') dataNotices.push(`AI书桌已核实本次云端目标删除。需要清理本机任务元数据时沿 scopeId=${deletionWitness.scopeId}、witnessId=${deletionWitness.witnessId} 的同一见证；宿主聊天、工作目录成果和独立导出仍保留。本机清理尚未执行。`);
+if (dataExportObservation.status === 'export_witness_saved') dataNotices.push(`AI书桌已核实本次本机元数据导出范围。使用 scopeId=${dataExportObservation.scopeId}、accessId=${dataExportObservation.accessId} 的本次导出许可；许可于 ${dataExportObservation.expiresAt} 到期且只能消费一次。它不授予任务创建、运行、恢复或删除权限。`);
+else if (dataExportObservation.status === 'rejected') dataNotices.push(`AI书桌本机导出许可未建立：${dataExportObservation.error}。原读取结果不因此改变；先重新准备并读取，不复用旧回执。`);
+if (dataNotices.length) { output(context(dataNotices.join('\n'))); process.exit(0); }
+if (accessObservation.status === 'rejected' || accessObservation.status === 'witness_saved') {
+  output(context(accessObservation.status === 'witness_saved'
+    ? 'AI书桌已将此次已认证任务快照绑定到本次本机访问；它不证明宿主运行状态或目标完成，也不授予再次创建许可。'
+    : `AI书桌本机任务访问见证未建立：${accessObservation.error}。原读取结果不因此改变；不要重放接续或创建其他任务。`)); process.exit(0);
+}
+if (hostWitness.status === 'rejected') {
+  output(context(`AI书桌本机任务见证未建立：${hostWitness.error}。服务 reserve 的实际结果不因此改变；保留原号对账，不把旧 Pre、重复回执或模型说明当创建许可。`)); process.exit(0);
+}
+if (observation === 'not_applicable') {
+  const result = !response || response.isError === true
+    ? '未获得成功读取回执；保留准确对象与已有原号，不能据此重发写入'
+    : '已观察成功读取回执；按实际返回的状态和范围使用';
+  output(context(`AI书桌新版 ${tool} ${result}（回执摘要 ${digest}）。本次只读调用不写入操作恢复账本；专用访问、导出或删除许可仍须各自的真实见证。`)); process.exit(0);
+}
 const recovery = observation === 'saved'
   ? '已保存本机哈希观察记录'
   : observation === 'conflict'
