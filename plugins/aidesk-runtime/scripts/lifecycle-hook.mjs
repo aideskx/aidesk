@@ -16,8 +16,16 @@ function deny(code, message) {
 function isNonEmptyString(value, max = 256) { return typeof value === 'string' && value.length > 0 && value.length <= max; }
 function boundedString(value, max = 256) { return isNonEmptyString(value, max) ? value : null; }
 const TARGET_IDENTIFIER_FIELDS = ['id', 'kind', 'goalId', 'publicId', 'publicVersion', 'commentId', 'notificationId', 'familyId', 'learnerId', 'sourceId'];
-function associationFromArgs(args) {
+function associationFromArgs(args, tool = null) {
   const target = args?.target && typeof args.target === 'object' && !Array.isArray(args.target) ? args.target : {};
+  // Service acceptance references a goal through the formal v1/v2 goalRef;
+  // do not search arbitrary nested request content for a cleanup association.
+  const goalRef = tool === 'aidesk_goal_service_cooperate'
+    && ['aidesk-goal-service-v1', 'aidesk-goal-service-v2'].includes(args?.contract)
+    && args.goalRef && typeof args.goalRef === 'object' && !Array.isArray(args.goalRef) ? args.goalRef : {};
+  const referenceGoalId = boundedString(goalRef.goalId, 512);
+  const directGoalIds = [args?.goalId, target.goalId].map(value => boundedString(value, 512)).filter(Boolean);
+  if (referenceGoalId && directGoalIds.some(value => value !== referenceGoalId)) throw new Error('goal association conflict');
   const values = {};
   for (const field of TARGET_IDENTIFIER_FIELDS) {
     const value = target[field] ?? args?.[field];
@@ -27,7 +35,7 @@ function associationFromArgs(args) {
   if (!values.kind && boundedString(args?.targetKind, 128)) values.kind = args.targetKind;
   if (!values.id && boundedString(args?.targetId, 512)) values.id = args.targetId;
   const targetKind = boundedString(values.kind, 128);
-  const goalId = boundedString(args?.goalId, 512) ?? boundedString(target.goalId, 512);
+  const goalId = directGoalIds[0] ?? referenceGoalId;
   // Normalize the primary object identifier so a target can be addressed by
   // --target-kind/--target-id without having to reproduce unrelated public
   // version or display metadata from the original request.
@@ -180,21 +188,21 @@ async function recordPostObservation(dataRoot, tool, event, args) {
   if (!isWriteTool(tool) || !isNonEmptyString(dataRoot, 4096) || !isAbsolute(dataRoot)
     || !operationId(args) || !isNonEmptyString(args.expectedAccountSubject, 512)) return 'unavailable';
   const response = event.tool_response;
-  const record = {
-    phase: 'PostToolUse', tool, operationId: operationId(args),
-    accountSubjectSha256: sha256(args.expectedAccountSubject), requestSha256: requestDigest(args),
-    ...associationFromArgs(args),
-    observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
-    observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
-    responseSha256: response === undefined ? null : sha256(response),
-    responseIsError: response === undefined ? null : response?.isError === true,
-    at: new Date().toISOString(),
-  };
   try {
+    const record = {
+      phase: 'PostToolUse', tool, operationId: operationId(args),
+      accountSubjectSha256: sha256(args.expectedAccountSubject), requestSha256: requestDigest(args),
+      ...associationFromArgs(args, tool),
+      observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
+      observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
+      responseSha256: response === undefined ? null : sha256(response),
+      responseIsError: response === undefined ? null : response?.isError === true,
+      at: new Date().toISOString(),
+    };
     const recorded = await appendRecoveryRecord(dataRoot, args, record);
     return recorded === false ? 'conflict' : 'saved';
   } catch (error) {
-    return error?.message === 'idempotency conflict' || error?.message === 'ledger identity conflict' ? 'conflict' : 'unavailable';
+    return ['idempotency conflict', 'ledger identity conflict', 'goal association conflict'].includes(error?.message) ? 'conflict' : 'unavailable';
   }
 }
 function filterFromOptions(options, { requireFilter = false } = {}) {
@@ -357,21 +365,21 @@ if (phase === 'PreToolUse') {
   const dataRoot = process.env.PLUGIN_DATA;
   if (write && (!isNonEmptyString(dataRoot, 4096) || !isAbsolute(dataRoot))) { output(deny('plugin_data_unavailable', '宿主没有提供绝对路径 PLUGIN_DATA，无法建立本机恢复记录。')); process.exit(0); }
   if (write) {
-    const association = associationFromArgs(args);
-    const record = {
-      phase, tool, operationId: operationId(args),
-      accountSubjectSha256: sha256(args.expectedAccountSubject),
-      requestSha256: requestDigest(args),
-      ...association,
-      observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
-      observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
-      at: new Date().toISOString(),
-    };
     try {
+      const association = associationFromArgs(args, tool);
+      const record = {
+        phase, tool, operationId: operationId(args),
+        accountSubjectSha256: sha256(args.expectedAccountSubject),
+        requestSha256: requestDigest(args),
+        ...association,
+        observedSessionId: isNonEmptyString(event.session_id, 512) ? sha256(event.session_id) : null,
+        observedCallId: isNonEmptyString(event.tool_use_id, 512) ? sha256(event.tool_use_id) : null,
+        at: new Date().toISOString(),
+      };
       const recorded = await appendRecoveryRecord(dataRoot, args, record);
       if (recorded === false) process.exit(0);
     } catch (error) {
-      const code = ['ledger identity conflict', 'idempotency conflict', 'unsafe operation id'].includes(error?.message) ? 'recovery_record_conflict' : 'recovery_record_failed';
+      const code = ['ledger identity conflict', 'idempotency conflict', 'unsafe operation id', 'goal association conflict'].includes(error?.message) ? 'recovery_record_conflict' : 'recovery_record_failed';
       output(deny(code, '本机恢复原件没有安全落盘，本次写入停止。')); process.exit(0);
     }
   }

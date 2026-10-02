@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.7+codex.20261001225309",
+  "latestVersion": "1.0.8+codex.20261002005145",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "fc344adc384b91fd6cfbcd7bf976c8d0363daa3da1a1ab18a71b43c3c79c816f",
-  "publishedAt": "2026-10-01T22:53:09Z",
-  "notes": "增加当前社区公开投影的精确撤回，绑定公开对象与内容/状态版本；未知结果沿原号对账，保持私人结果和他人引用。"
+  "packageDigest": "3ee63a80af9a4335d284070f9151b53a4eb84e1cb8e7adbdaa750c147feb849f",
+  "publishedAt": "2026-10-02T00:51:45Z",
+  "notes": "修复服务受理恢复记录与目标的关联，使其按目标准确导出和清理；旧缺失关联记录不自动回填。"
 }
