@@ -365,15 +365,49 @@ export function parseArguments(args) {
   return { apply, check, explicit };
 }
 
-async function main() {
-  const { apply, explicit } = parseArguments(process.argv.slice(2));
-  const codex = await discoverCodex(explicit); if (!codex) { console.log(JSON.stringify({ status: 'unknown', changed: false, reason: 'host_unavailable' })); return; }
-  const releaseLock = await acquireLock(); if (!releaseLock) { console.log(JSON.stringify({ status: 'unknown', changed: false, reason: 'update_busy' })); return; }
-  try {
-    const inventory = () => runCommand(codex, ['plugin', 'list', '--json'], 30_000);
-    const result = await updatePlugin({ packageRoot: PACKAGE_ROOT, inventory, readSource: () => readMarketplaceSource(codex), command: runCommand, apply, codex });
-    console.log(JSON.stringify({ ...result, mode: apply ? 'apply' : 'check' }));
-  } finally { await releaseLock(); }
+const SAFE_ERROR_CODES = new Set([
+  'EACCES', 'EPERM', 'ENOENT', 'ENOTDIR', 'EEXIST', 'EROFS', 'ENOSPC', 'EDQUOT',
+  'EMFILE', 'ENFILE', 'EIO', 'EBADF', 'EINVAL', 'ENOMEM', 'ETIMEDOUT', 'EAGAIN', 'EBUSY', 'ESRCH',
+]);
+const diagnostic = (phase, error) => ({ phase, code: SAFE_ERROR_CODES.has(error?.code) ? error.code : null });
+
+function updateFromHost({ apply, codex }) {
+  const inventory = () => runCommand(codex, ['plugin', 'list', '--json'], 30_000);
+  return updatePlugin({ packageRoot: PACKAGE_ROOT, inventory, readSource: () => readMarketplaceSource(codex), command: runCommand, apply, codex });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) main().catch(() => { console.log(JSON.stringify({ status: 'unknown', changed: false, reason: 'host_unavailable' })); process.exitCode = 2; });
+/** CLI lifecycle: preserve a known update result even if releasing its lock fails. */
+export async function runUpdater(args, { discover = discoverCodex, acquire = acquireLock, execute = updateFromHost } = {}) {
+  let phase = 'arguments', parsed, releaseLock, result, exitCode = 0;
+  const diagnostics = [];
+  try {
+    parsed = parseArguments(args);
+    phase = 'cli_discovery';
+    const codex = await discover(parsed.explicit);
+    if (!codex) return { result: { status: 'unknown', changed: false, reason: 'host_unavailable', diagnostics: [diagnostic(phase)] }, exitCode };
+    phase = 'lock_acquire';
+    releaseLock = await acquire();
+    if (!releaseLock) return { result: { status: 'unknown', changed: false, reason: 'update_busy' }, exitCode };
+    phase = 'update_execution';
+    result = { ...await execute({ apply: parsed.apply, codex }), mode: parsed.apply ? 'apply' : 'check' };
+  } catch (error) {
+    result = { status: 'unknown', changed: phase === 'update_execution' && parsed?.apply ? null : false, reason: 'host_unavailable' };
+    diagnostics.push(diagnostic(phase, error));
+    exitCode = 2;
+  } finally {
+    if (releaseLock) {
+      try { await releaseLock(); }
+      catch (error) { diagnostics.push(diagnostic('lock_release', error)); exitCode = 2; }
+    }
+  }
+  return { result: diagnostics.length ? { ...result, diagnostics } : result, exitCode };
+}
+
+async function main() {
+  const { result, exitCode } = await runUpdater(process.argv.slice(2));
+  // Emit once, after cleanup; never replace a known changed=true with a catch-all result.
+  console.log(JSON.stringify(result));
+  process.exitCode = exitCode;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) main().catch(() => { process.exitCode = 2; });

@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.0.8+codex.20261002005145",
+  "latestVersion": "1.0.9+codex.20261002020027",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "3ee63a80af9a4335d284070f9151b53a4eb84e1cb8e7adbdaa750c147feb849f",
-  "publishedAt": "2026-10-02T00:51:45Z",
-  "notes": "修复服务受理恢复记录与目标的关联，使其按目标准确导出和清理；旧缺失关联记录不自动回填。"
+  "packageDigest": "d5d4d3fa25b1a30cbffd46f4cc61e9be97b7595e13ebc103dc08379a618d456e",
+  "publishedAt": "2026-10-02T02:00:27Z",
+  "notes": "更新器异常新增固定phase与白名单errno诊断，保留已确认结果；未知结果不自动重试。不输出原始错误、路径或凭据；不代表此前自然升级失败原因已查明或全功能验收通过。"
 }
