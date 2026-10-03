@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.14+codex.20261003142053",
+  "latestVersion": "1.1.15+codex.20261003143000",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "7554ed7048ce008ef19870ee15148cf056338f137808478a8df40fda8055c1d5",
-  "publishedAt": "2026-10-03T06:21:38Z",
-  "notes": "明确不分享目标使用显式私有定稿；所有新 UUID 使用标准小写 8-4-4-4-12 形状；任务 prepare_creation 与 reserve 必须复用包含 expectedAccountSubject 的完整原件，避免宿主上下文与服务原件分离。"
+  "packageDigest": "4e3f96c87353011e06970b7c5abf714419d8a31447396abec937b3d3839d4a29",
+  "publishedAt": "2026-10-03T06:30:00Z",
+  "notes": "明确任务 reserve 调用形状：宿主 prepare_creation 使用 reservationInput，权威 task_reserve 使用同一原件展开后的顶层字段；保留 expectedAccountSubject、一次性 operationId 与完整 Hook 见证。"
 }
