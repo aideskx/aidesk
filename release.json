@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.7+codex.20261002192908",
+  "latestVersion": "1.1.8+codex.20261003003205",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "e8a45b43e07268fe8087edc0e3fc01ab2ac723102a8a1f5e58ccbdd50e1a013f",
-  "publishedAt": "2026-10-02T23:34:01.058Z",
-  "notes": "1.1.7 技术交付：修复新目标默认分享路径与旧导出许可干扰普通预览；同包Mac安装、自然入口、无额外发布指令的默认公开，以及许可已消费未到期和消费后实际过期的普通预览均已独立验收。完整清理、其他平台和UI仍待验，不宣称全部验收或运营上线。"
+  "packageDigest": "af87cbda6a89101701798453a00098a0b9e3e58a34353f257fa0ed76de9ca16c",
+  "publishedAt": "2026-10-03T00:48:17.211Z",
+  "notes": "补充Linux桌面入口的官方安装归属、默认协议处理器与安全文件读取校验；保留原任务对应关系及权限边界。"
 }

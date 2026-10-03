@@ -2,8 +2,9 @@
 // Call only within an authorized dispatch after its exact stored-pair readback.
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
-import { open, realpath, stat } from 'node:fs/promises';
+import { access, lstat, open, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { TextDecoder } from 'node:util';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sha256 } from './contract.mjs';
@@ -11,6 +12,7 @@ import { readCodexDefaultAppId } from './windows-backend.mjs';
 
 const HASH = /^[a-f0-9]{64}$/u, UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 const PROFILE = 'codex_desktop_local_default_v1', WINDOWS_PROFILE = 'codex_windows_desktop_local_default_v1', LIMIT = 524288;
+const LINUX_PROFILE = 'codex_linux_desktop_local_default_v1';
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => object(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
 const textHash = v => createHash('sha256').update(v).digest('hex');
@@ -40,7 +42,7 @@ export function projectDesktopEntryProof({ proof, state }) {
     const e = proof.evidence, p = state.namespaceReadback;
     need(exact(e, ['format', 'profile', 'runAction', 'contextId', 'runId', 'threadId', 'hostId', 'intentSha256',
       'sourceThreadIdSha256', 'homeSha256', 'workspaceSha256', 'namespaceReceiptSha256', 'bundleMetadataSha256', 'entryUri'])
-      && e.format === 1 && [PROFILE, WINDOWS_PROFILE].includes(e.profile) && e.hostId === 'local' && e.runAction === state.action
+      && e.format === 1 && [PROFILE, WINDOWS_PROFILE, LINUX_PROFILE].includes(e.profile) && e.hostId === 'local' && e.runAction === state.action
       && ['contextId', 'runId', 'threadId', 'intentSha256', 'sourceThreadIdSha256'].every(k => e[k] === state[k])
       && e.homeSha256 === p.homeSha256 && e.workspaceSha256 === p.workspaceSha256
       && e.namespaceReceiptSha256 === p.readerReceiptSha256 && HASH.test(e.bundleMetadataSha256 ?? '')
@@ -203,13 +205,133 @@ async function windowsMetadataHash(executable, readMetadata) {
   return sha256({ ...m, installLocation: textHash(root), applicationExecutable: textHash(app), executablePathSha256: textHash(executable) });
 }
 
+// Deliberately limited to the observed dpkg desktop package and its public
+// launcher contract. Other package formats/launchers supply no proof. No version
+// or binary digest is a capability requirement, and no application is launched.
+const LINUX_LAUNCHER = '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/ChatGPT" "$@"\n';
+const linuxFilePath = v => path(v) && !/[\r\n\t*?[\]\\]/u.test(v);
+async function linuxPublicFile(file, uid, executable = false, read = false) {
+  need(linuxFilePath(file) && await realpath(file) === file);
+  const link = await lstat(file);
+  need(link.isFile() && link.uid === uid && (link.mode & 0o022) === 0 && (!executable || (link.mode & 0o111) !== 0));
+  // Pre-check refuses special files. NONBLOCK also prevents a file replaced by
+  // a FIFO between lstat/open from blocking before the descriptor can be checked.
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat();
+    need(before.isFile() && before.dev === link.dev && before.ino === link.ino
+      && before.uid === uid && before.mode === link.mode && before.mtimeMs === link.mtimeMs && before.ctimeMs === link.ctimeMs);
+    if (!read) return null;
+    need(before.size > 0 && before.size <= LIMIT);
+    const buffer = Buffer.alloc(before.size + 1); let length = 0;
+    while (length < buffer.length) {
+      const part = await handle.read(buffer, length, buffer.length - length, null);
+      if (!part.bytesRead) break; length += part.bytesRead;
+    }
+    const after = await handle.stat(), bytes = buffer.subarray(0, length);
+    need(length === before.size && before.size === after.size && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs);
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), sha256: textHash(bytes) };
+  } finally { await handle.close(); }
+}
+function linuxDesktopKeys(text) {
+  const keys = {}; let active = false, groups = 0;
+  for (const line of text.split(/\r?\n/u)) {
+    if (!line || line.startsWith('#')) continue;
+    if (line.startsWith('[')) { active = line === '[Desktop Entry]'; if (active) groups++; continue; }
+    if (!active) continue;
+    const match = /^([A-Za-z0-9-]+(?:\[[^\]\r\n]+\])?)=(.*)$/u.exec(line);
+    need(match && !Object.hasOwn(keys, match[1])); keys[match[1]] = match[2];
+  }
+  need(groups === 1 && keys.Type === 'Application' && keys.MimeType?.split(';').includes('x-scheme-handler/codex')
+    && (!keys.Hidden || keys.Hidden === 'false') && (!keys.Terminal || keys.Terminal === 'false')
+    && (!keys.DBusActivatable || keys.DBusActivatable === 'false') && !keys.Path && !keys.TryExec);
+  // This observed package uses an unquoted command name and one URL field.
+  // Unknown Exec syntax is not interpreted or evaluated as a shell command.
+  const exec = /^([A-Za-z0-9_./-]+) %([uU])$/u.exec(keys.Exec ?? '');
+  need(exec && basename(exec[1]) === 'chatgpt' && (isAbsolute(exec[1]) || exec[1] === 'chatgpt'));
+  return exec[1];
+}
+
+/** Internal metadata/test seam only. XDG lookup and dpkg ownership are both
+ * required; a user override must not be bypassed by reading /usr/share directly.
+ * https://specifications.freedesktop.org/basedir/latest/
+ * https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html */
+export async function readLinuxDesktopMetadata({ executable, userHome = homedir(), env = process.env,
+  run = execFile, fileOwnerUid = 0 } = {}) {
+  const end = Date.now() + 5000;
+  const query = (file, args) => new Promise((resolveResult, reject) => {
+    const timeout = end - Date.now(); if (timeout <= 0) { reject(Error('linux_desktop_metadata_unavailable')); return; }
+    const child = run(file, args, { encoding: 'utf8', timeout, maxBuffer: 32768, killSignal: 'SIGKILL',
+      shell: false, windowsHide: true, env: { ...env, LC_ALL: 'C', LANG: 'C' } }, (error, stdout, stderr) => {
+      if (error || stderr || typeof stdout !== 'string' || Buffer.byteLength(stdout) > 32768 || Date.now() > end) reject(Error('linux_desktop_metadata_unavailable'));
+      else resolveResult(stdout);
+    });
+    child.stdin.on('error', () => reject(Error('linux_desktop_metadata_unavailable'))); child.stdin.end();
+  });
+  try {
+    // A staging/rootless dpkg database cannot attest this desktop installation.
+    need(linuxFilePath(executable) && path(userHome) && !env.DPKG_ROOT && !env.DPKG_ADMINDIR);
+    const defaultDesktopId = await query('/usr/bin/xdg-mime', ['query', 'default', 'x-scheme-handler/codex']);
+    need(defaultDesktopId === 'chatgpt.desktop\n');
+    const roots = [env.XDG_DATA_HOME || join(userHome, '.local/share'), ...(env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':')];
+    need(roots.length <= 32 && roots.every(v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0')));
+    let desktopPath;
+    for (const root of roots) {
+      const candidate = join(root, 'applications', 'chatgpt.desktop');
+      try { await lstat(candidate); desktopPath = candidate; break; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    need(desktopPath);
+    const desktop = await linuxPublicFile(desktopPath, fileOwnerUid, false, true), command = linuxDesktopKeys(desktop.text);
+    let launcherPath = isAbsolute(command) ? command : null;
+    if (!launcherPath) {
+      const dirs = (env.PATH ?? '').split(':'); need(dirs.length <= 64 && dirs.every(v => path(v)));
+      for (const dir of dirs) {
+        const candidate = join(dir, command);
+        try { await access(candidate, constants.X_OK); launcherPath = candidate; break; }
+        catch (error) { if (!['ENOENT', 'EACCES'].includes(error.code)) throw error; }
+      }
+    }
+    need(linuxFilePath(launcherPath));
+    const launcherRealPath = await realpath(launcherPath), launcher = await linuxPublicFile(launcherRealPath, fileOwnerUid, true, true);
+    need(launcher.text.replaceAll('\r\n', '\n') === LINUX_LAUNCHER);
+    const applicationPath = join(dirname(launcherRealPath), 'ChatGPT');
+    await linuxPublicFile(applicationPath, fileOwnerUid, true); await linuxPublicFile(executable, fileOwnerUid, true);
+    const ownedPaths = [...new Set([executable, desktopPath, launcherPath, launcherRealPath, applicationPath])];
+    need(ownedPaths.every(linuxFilePath));
+    const ownership = await query('/usr/bin/dpkg-query', ['--search', '--', ...ownedPaths]);
+    const ownershipLines = ownership.trimEnd().split('\n');
+    need(ownershipLines.length === ownedPaths.length && ownedPaths.every(p => ownershipLines.filter(line => line === `chatgpt: ${p}`).length === 1));
+    const packageText = await query('/usr/bin/dpkg-query', ['--show', '--showformat=${binary:Package}\n${Status}\n${Architecture}\n${Version}\n', '--', 'chatgpt']);
+    const fields = packageText.split('\n');
+    need(fields.length === 5 && fields[0] === 'chatgpt' && fields[1] === 'install ok installed'
+      && /^(?:arm64|amd64)$/u.test(fields[2]) && /^[0-9][A-Za-z0-9.+:~-]*$/u.test(fields[3]) && fields[4] === '' && Date.now() <= end);
+    return { format: 1, discovery: 'current_user_xdg_dpkg', packageName: 'chatgpt', status: fields[1],
+      architecture: fields[2], version: fields[3], defaultDesktopId: 'chatgpt.desktop', protocol: 'codex',
+      executablePath: executable, desktopPath, desktopSha256: desktop.sha256,
+      launcherPath, launcherRealPath, launcherSha256: launcher.sha256, applicationPath, ownershipSha256: textHash(ownership) };
+  } catch { throw Error('linux_desktop_metadata_unavailable'); }
+}
+async function linuxMetadataHash(executable, userHome, readMetadata) {
+  const m = await readMetadata({ executable, userHome });
+  need(exact(m, ['format', 'discovery', 'packageName', 'status', 'architecture', 'version', 'defaultDesktopId', 'protocol',
+    'executablePath', 'desktopPath', 'desktopSha256', 'launcherPath', 'launcherRealPath', 'launcherSha256', 'applicationPath', 'ownershipSha256'])
+    && m.format === 1 && m.discovery === 'current_user_xdg_dpkg' && m.packageName === 'chatgpt'
+    && m.status === 'install ok installed' && ['arm64', 'amd64'].includes(m.architecture)
+    && /^[0-9][A-Za-z0-9.+:~-]*$/u.test(m.version) && m.defaultDesktopId === 'chatgpt.desktop' && m.protocol === 'codex'
+    && m.executablePath === executable && ['desktopSha256', 'launcherSha256', 'ownershipSha256'].every(k => HASH.test(m[k] ?? '')));
+  for (const k of ['executablePath', 'desktopPath', 'launcherRealPath', 'applicationPath']) need(linuxFilePath(m[k]) && await realpath(m[k]) === m[k] && (await stat(m[k])).isFile());
+  need(linuxFilePath(m.launcherPath) && await realpath(m.launcherPath) === m.launcherRealPath
+    && m.applicationPath === join(dirname(m.launcherRealPath), 'ChatGPT'));
+  return sha256({ ...m, ...Object.fromEntries(['executablePath', 'desktopPath', 'launcherPath', 'launcherRealPath', 'applicationPath'].map(k => [k, textHash(m[k])])) });
+}
+
 /** Worker-only owner inputs. deps is an internal test seam, not tool arguments.
  * Capability identities are fixed; CLI/app versions and binary hashes are not.
  * Any failure preserves the real task but supplies no creation proof. */
 export async function buildDesktopEntryProof(input, deps = {}) {
   try {
     const platform = deps.platform ?? process.platform;
-    need(exact(input, ['intent', 'state', 'namespace']) && ['darwin', 'win32'].includes(platform));
+    need(exact(input, ['intent', 'state', 'namespace']) && ['darwin', 'win32', 'linux'].includes(platform));
     const { intent, state, namespace } = input;
     need(object(intent) && object(namespace) && boundReadback(state) && state.intentSha256 === sha256(intent)
       && ['contextId', 'runId', 'action', 'sourceThreadIdSha256'].every(k => intent[k] === state[k])
@@ -227,6 +349,7 @@ export async function buildDesktopEntryProof(input, deps = {}) {
     const executable = await realpath(intent.executable); need(executable === intent.executable && (await stat(executable)).isFile());
     let bundleMetadataSha256;
     if (platform === 'win32') bundleMetadataSha256 = await windowsMetadataHash(executable, deps.readWindowsMetadata ?? readWindowsDesktopMetadata);
+    else if (platform === 'linux') bundleMetadataSha256 = await linuxMetadataHash(executable, userHome, deps.readLinuxMetadata ?? readLinuxDesktopMetadata);
     else {
       const cliBundle = appAncestor(dirname(executable)); need(cliBundle);
       const desktopBundle = appAncestor(dirname(cliBundle)); need(desktopBundle && inside(desktopBundle, cliBundle));
@@ -240,7 +363,7 @@ export async function buildDesktopEntryProof(input, deps = {}) {
       bundleMetadataSha256 = sha256({ cliMetadataSha256: cli.sha256, desktopMetadataSha256: desktop.sha256,
         cliBundleId: 'com.openai.codex.cli', desktopBundleId: 'com.openai.codex', uriScheme: 'codex' });
     }
-    const evidence = { format: 1, profile: platform === 'win32' ? WINDOWS_PROFILE : PROFILE, runAction: state.action, contextId: state.contextId, runId: state.runId,
+    const evidence = { format: 1, profile: platform === 'win32' ? WINDOWS_PROFILE : platform === 'linux' ? LINUX_PROFILE : PROFILE, runAction: state.action, contextId: state.contextId, runId: state.runId,
       threadId: state.threadId, hostId: 'local', intentSha256: state.intentSha256,
       sourceThreadIdSha256: state.sourceThreadIdSha256, homeSha256: namespace.homeSha256, workspaceSha256: namespace.workspaceSha256,
       namespaceReceiptSha256: state.namespaceReadback.readerReceiptSha256, bundleMetadataSha256,
