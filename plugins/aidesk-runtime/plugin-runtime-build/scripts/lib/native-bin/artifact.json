@@ -1,0 +1,12 @@
+{
+    "schema":  "aidesk-windows-helper-artifact-v1",
+    "source":  "windows-safe-io.cs",
+    "sourceSha256":  "ca09a8db3dd9b5119b9cc55b89f11cf7e4c3baf4543ab058d1d0247b17e9e056",
+    "executable":  "windows-safe-io.exe",
+    "executableSha256":  "777fea0acda4d01c2944f75ef907b46f245ea0b840522f52f42bb95359ce63ed",
+    "runtime":  "net-framework-4.x",
+    "platform":  "anycpu",
+    "compilerFileSha256":  "46809206887326d2d24db1eff1f3064de972c3451abe766b49111450a5e08e00",
+    "compileMilliseconds":  6484.7528,
+    "reproducibleBuildClaim":  false
+}

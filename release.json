@@ -5,7 +5,7 @@
   "channel": "stable",
   "latestVersion": "1.1.10+codex.20261003125055",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "cd9467ed7617310f4a751edfec556c97e5e51d1efc72ff2499527b34bbb8c6e8",
-  "publishedAt": "2026-10-03T05:15:48Z",
-  "notes": "明确区分目标分享状态：用户明确不公开时写入显式私有选择；未解决的分享状态保持未知并继续私有保护。同步更新 CLI-native Plugin 契约与权威服务目录。"
+  "packageDigest": "318f1bc2ad92d83e7966cf61a34704b3fd32b4f7260fff66c5077546698c105c",
+  "publishedAt": "2026-10-03T05:40:37Z",
+  "notes": "明确区分目标分享状态：用户明确不公开时写入显式私有选择；新增所有 UUID 生成规则必须使用小写十六进制，避免自然入口因大小写格式被服务拒绝。同步更新 CLI-native Plugin 契约。"
 }

@@ -1,0 +1,162 @@
+{
+  "format": 1,
+  "algorithm": "git-file-modes-v1",
+  "files": [
+    {
+      "path": ".codex-plugin/file-modes.json",
+      "gitMode": "100644"
+    },
+    {
+      "path": ".codex-plugin/plugin.json",
+      "gitMode": "100644"
+    },
+    {
+      "path": ".mcp.json",
+      "gitMode": "100644"
+    },
+    {
+      "path": "hooks/hooks.json",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/domain/contracts.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/domain/host-task-access-contract.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/domain/host-task-authority.generated.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/domain/host-task-contract.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/host-task-server.mjs",
+      "gitMode": "100755"
+    },
+    {
+      "path": "scripts/host-task-worker.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/contract.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/helper-artifact.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-data-access.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-data-binding.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-desktop-entry.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-process.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-task-access.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-task-context.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-task-data-rights.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-task-runner.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-task-scope.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-thread-namespace.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/host-update-owner.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/native-bin/artifact.json",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/native-bin/windows-safe-io.exe",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/package-integrity.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/recovery-ledger.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/rpc-client.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/windows-backend.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lib/windows-safe-io.cs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/lifecycle-hook.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/preflight.mjs",
+      "gitMode": "100644"
+    },
+    {
+      "path": "scripts/update.mjs",
+      "gitMode": "100755"
+    },
+    {
+      "path": "skills/aidesk-entry/SKILL.md",
+      "gitMode": "100644"
+    },
+    {
+      "path": "skills/aidesk-entry/references/community.md",
+      "gitMode": "100644"
+    },
+    {
+      "path": "skills/aidesk-entry/references/data-rights.md",
+      "gitMode": "100644"
+    },
+    {
+      "path": "skills/aidesk-entry/references/goals.md",
+      "gitMode": "100644"
+    },
+    {
+      "path": "skills/aidesk-entry/references/legacy-network.md",
+      "gitMode": "100644"
+    },
+    {
+      "path": "skills/aidesk-entry/references/recovery.md",
+      "gitMode": "100644"
+    }
+  ]
+}
