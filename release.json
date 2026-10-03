@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.12+codex.20261003140447",
+  "latestVersion": "1.1.13+codex.20261003141038",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "3668a33a5b4a06c5da59caf602f37175306cb3eff5513d26672d1b7375709222",
-  "publishedAt": "2026-10-03T06:05:43Z",
-  "notes": "明确区分目标分享状态：用户明确不公开时写入显式私有选择；所有新 UUID 必须使用标准小写 8-4-4-4-12 形状，避免自然入口因大小写或形状被服务拒绝。同步更新 CLI-native Plugin 契约。"
+  "packageDigest": "9c8efc3c541448d1b39821fc62b8a72c8a1133d61925ed915bee4ddcd55a01f0",
+  "publishedAt": "2026-10-03T06:11:28Z",
+  "notes": "明确区分目标分享状态：用户明确不公开时写入显式私有选择；所有新 UUID 必须使用标准小写 8-4-4-4-12 形状，执行环境没有 crypto.randomUUID 时使用内置生成规则，避免自然入口因大小写、形状或运行时对象缺失被服务拒绝。"
 }

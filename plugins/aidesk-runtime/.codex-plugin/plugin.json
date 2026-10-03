@@ -1,6 +1,6 @@
 {
   "name": "aidesk-runtime",
-  "version": "1.1.12+codex.20261003140447",
+  "version": "1.1.13+codex.20261003141038",
   "description": "AI书桌未来版：CLI-native 目标协作、结果回报与可追踪恢复。",
   "author": {
     "name": "AI书桌",

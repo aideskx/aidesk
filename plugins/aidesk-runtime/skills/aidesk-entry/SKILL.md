@@ -15,6 +15,7 @@ description: 打开 AI 书桌，澄清本人目标，衔接宿主目标任务，
 - 用户明确要求将新目标定稿时，按本人当前默认分享设置办理，先展示将公开的摘要和单目标开关；默认开启且本人没有关闭或要求只预览时，定稿后继续完成公开并核读回，无须另等一句“发布”。定稿成功不等于已公开；按[目标说明](./references/goals.md)衔接两步。草稿和旧私人目标保持原状态，不批量公开。
 - 新写入只生成一次原号和规范请求摘要；未知、缺少 Post 或迟到回执只沿原号对账，不换号重试。
 - 所有新生成的 UUID（包括 `goalId`、`operationId`、`attemptId`、`reportId` 及关联 ID）必须使用标准小写 UUID 形状 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`（8-4-4-4-12，共 36 个字符）；不要提交大写 UUID 或不带连字符的 32 位字符串。未知写入仍沿用原号，不重新生成。
+- 若执行环境没有 `crypto.randomUUID()`，用确定形状的本地生成器产生新号，例如 `const newUuid=()=>[8,4,4,4,12].map(n=>Array.from({length:n},()=>Math.floor(Math.random()*16).toString(16)).join(\"\")).join(\"-\")`；不要退回业务名称、日期串或自行拼接的非 UUID 值。
 - 只有服务返回 fresh reserve 且宿主创建成功后，才报告“已建立目标任务”；不得猜测 threadId、hostId 或链接。
 
 ## 入口顺序
