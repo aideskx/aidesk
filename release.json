@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.8+codex.20261003003205",
+  "latestVersion": "1.1.9+codex.20261003031536",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "af87cbda6a89101701798453a00098a0b9e3e58a34353f257fa0ed76de9ca16c",
-  "publishedAt": "2026-10-03T01:17:10.722Z",
-  "notes": "1.1.8 技术交付：补齐 Linux 桌面入口归属、协议处理器及安全读取校验；同包 Mac 官方安装、自然入口和版本读取 Pre/Post 已验，专用 Ubuntu 安装及入口元数据核验通过。Linux Hook 仍 untrusted，登录业务与 GUI 未验；来源检查、真实 Windows 桌面和完整功能验收继续单列，不宣称全部验收或运营上线。"
+  "packageDigest": "5603da4c215104bc4fd3855dedcfd18ca874c34ae70d4c4177c9cba62d1c0c2e",
+  "publishedAt": "2026-10-03T03:28:16.326Z",
+  "notes": "修正个人目标书桌的自然入口：新版目录不再暴露旧家庭/教学入口，登录后未提供具体目标时继续自然澄清；保留原身份、权限及历史原号恢复。"
 }
