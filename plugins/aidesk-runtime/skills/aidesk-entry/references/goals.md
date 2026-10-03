@@ -4,6 +4,8 @@
 
 新目标使用实际目录支持的 `aidesk-goal-draft-v2`。保存前先完成 `aidesk_account_status`、`aidesk_platform_account_prepare` 和 `aidesk_platform_subscription_read`；写入必须带一次性的 `operationId`、领域 `contract` 和已核实的 `expectedAccountSubject`。草稿阶段只记录用户正在编辑的内容和分享意向，不把草稿当作公开目标。
 
+所有新生成的 UUID（包括 `goalId`、`operationId`、`attemptId`、`reportId` 及关联 ID）必须使用小写十六进制和连字符格式；服务合同拒绝大写 UUID。未知写入沿用原号对账，不重新生成。
+
 用户明确要求将新目标定稿时，先用 `aidesk_goal_finalization_read` 核 `defaultEligible`、当前草稿版本及尚无定稿，再读取本人当前分享偏好。默认开启且本人没有关闭当前目标或限定只预览时，展示选定的公开摘要及“分享开启，可关闭当前目标或调整以后默认值”，按当前偏好版本以 `basis:"default"` 定稿，并继续完成[社区首次公开](./community.md#首次公开)。这属于本次新目标定稿流程，无须再等待一句独立的“发布”。本人单独选择开关时使用 `basis:"goal_choice"`；当本人明确说“不分享”或“不公开”时，必须提交 `sharing:{basis:"goal_choice",enabled:false,preferenceVersion:null,projection:null}`。`sharing:null` 只表示分享状态未解决，虽然服务会保守地保持私有，但不能当作本人已经关闭。默认关闭、单目标关闭或只要求草稿／预览时不公开，不为了走默认流程改动本人偏好。
 
 `aidesk_goal_finalization_finalize` 只固定目标版本、分享选择及最小公开投影，不创建公开映射。分享开启的定稿回执与社区公开回执是两步，只有后者及当前公开读回成立才能报告已分享，并展示真实 `publicId`／公开版本及开关。定稿成功但公开失败或未知时，明确说明“目标已定稿，公开尚未完成”，沿原号处理，不把再次定稿当作发布重试。公开投影只包含合同允许的摘要，完整目标内容仍按权限保存。
