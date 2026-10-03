@@ -1760,7 +1760,7 @@ const fields$2 = {
 	}
 };
 const descriptions$2 = {
-	finalize: "按本人已明确的目标版本及分享开关定稿，固定最小公开预览；开启须带预览，关闭须为null，采用默认值须带读取的preferenceVersion。不公开原文、不启动试用或创建任务；保留原号对账。",
+	finalize: "按本人已明确的目标版本及分享开关定稿，固定最小公开预览；明确关闭须传basis为goal_choice、enabled为false、preferenceVersion为null且projection为null的对象；sharing为null仅表示分享状态未解决，不能代替本人明确关闭；开启须带预览，采用默认值须带读取的preferenceVersion。不公开原文、不启动试用或创建任务；保留原号对账。",
 	read: "读取本人目标的定稿版本及可信新建资格；latestGoalVersion是当前草稿版本，历史定稿不表示当前内容已采用。失败不能当作默认分享或首次创建。",
 	operation: "按原操作号与完整请求摘要核对目标定稿；not_found不是取消终态，旧回执只证明当时定稿，当前版本另用read读取。"
 };

@@ -3,9 +3,9 @@
   "plugin": "aidesk-runtime",
   "repository": "aideskx/aidesk",
   "channel": "stable",
-  "latestVersion": "1.1.9+codex.20261003031536",
+  "latestVersion": "1.1.10+codex.20261003125055",
   "minimumSupportedVersion": "1.0.5+codex.20261001120032",
-  "packageDigest": "5603da4c215104bc4fd3855dedcfd18ca874c34ae70d4c4177c9cba62d1c0c2e",
-  "publishedAt": "2026-10-03T03:28:16.326Z",
-  "notes": "修正个人目标书桌的自然入口：新版目录不再暴露旧家庭/教学入口，登录后未提供具体目标时继续自然澄清；保留原身份、权限及历史原号恢复。"
+  "packageDigest": "cd9467ed7617310f4a751edfec556c97e5e51d1efc72ff2499527b34bbb8c6e8",
+  "publishedAt": "2026-10-03T05:15:48Z",
+  "notes": "明确区分目标分享状态：用户明确不公开时写入显式私有选择；未解决的分享状态保持未知并继续私有保护。同步更新 CLI-native Plugin 契约与权威服务目录。"
 }
