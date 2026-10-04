@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "aidesk-minimal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "帮助家长和孩子用 AI 推进眼前的一个真实问题。",
   "extensions": {
     "com.openai": {
